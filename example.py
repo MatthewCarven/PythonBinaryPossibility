@@ -38,5 +38,6 @@ reg_a.set_bit(0, 1) # Set index 0 of Reg A to '1'
 # Now: Reg A has 1 superpos bit (2 states) * Reg B (8 states) = 16 possibilities
 print(f"New Total: {group.calculate_possibility_count()}")
 
+print(str(group.enumerate_states()))
 
 
