@@ -1,8 +1,12 @@
-"""Tour of PythonBinaryPossibility: registers, groups, trees, and glitching."""
+"""Tour of PythonBinaryPossibility: registers, groups, trees, glitching, and sound.
+
+Run it with ``python example.py``. For the clickable version, ``python bench.py``.
+"""
 
 from BinaryPossibility import BinaryRegister, BinaryRegisterGroup
 from binarypossibilitytrees import render_possibility_tree
 from BinaryGlitch import BinaryGlitch
+from PsynthRack import PsynthRack
 
 # ---------------------------------------------------------------
 # 1. A single register: collapse bits, watch the possibility space
@@ -64,3 +68,23 @@ print(", ".join(repr(v) for v in BinaryGlitch.iter_variant_texts(glitched)))
 print("A seeded random glitch of 'Hello' (3 bits of superposition):")
 for variant in BinaryGlitch.glitch_text("Hello", 3, seed=42):
     print(f"  {variant!r}")
+
+# ---------------------------------------------------------------
+# 5. Psynthrack: superposition you can hear
+# ---------------------------------------------------------------
+print()
+print("A step sequencer whose undecided steps make undecided music:")
+rack = PsynthRack.demo_rack()
+rack.superpose_random(5, seed=11)
+for track in rack.tracks:
+    print(f"  {track.voice.name:<6} {track.pattern()}")
+print(f"  -> {rack.superposed_step_count()} steps undecided, "
+      f"{rack.possibility_count():,} possible songs")
+
+print()
+print("Collapsing the same rack three ways (only the hats and bass move):")
+for take, seed in enumerate((1, 2, 3), start=1):
+    patterns = rack.collapse(seed=seed)
+    filename = rack.write_wav(f"psynthrack_take{take}.wav", patterns)
+    print(f"  take {take}: {patterns[2]}  ->  {filename}")
+print("Play those three files -- same pattern, three different songs.")

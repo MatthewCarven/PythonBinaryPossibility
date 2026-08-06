@@ -9,7 +9,28 @@ freely.
 - [ ] **Linked bits ("entanglement")**: constrain two bits to collapse
       together (equal or opposite), shrinking the possibility space the way
       the quantum framing suggests. Deferred from 2026-08-06 session — good
-      candidate for its own session.
+      candidate for its own session. Now has an obvious musical payoff too:
+      entangled steps across tracks (kick and bass always agreeing, hat
+      always opposing) would make collapses that stay coherent.
+
+## Psynthrack & bench (added 2026-08-06)
+
+- [ ] **Live playback in the bench** — a Play button instead of save-then-open.
+      Needs a non-stdlib audio backend (`sounddevice`/`pyaudio`), or
+      `winsound.PlaySound` on Windows only, which *is* stdlib. Worth a look.
+- [ ] **PCM bit-glitch voice**: point `BinaryGlitch` at raw waveform bytes so
+      the *sound itself* is superposed, not just the pattern. (Considered and
+      deferred when choosing the tracker model.)
+- [ ] **Synth patch superposition**: encode pitch/waveform/filter as a register
+      so `?` bits give you every variation of a voice. (Same deferral.)
+- [ ] Per-track mute/solo and volume in the rack bench.
+- [ ] Melodic tracks — steps carry a note, not just on/off. Would want a
+      register per step, or a different possibility model; think first.
+- [ ] Pattern chaining / song mode: several racks in sequence.
+- [ ] Save and load rack patterns (a pattern string per track is nearly a file
+      format already).
+- [ ] Bench: undo, and a "collapse in place" button that commits the dice roll
+      back into the grid.
 
 ## Ideas, unscheduled
 

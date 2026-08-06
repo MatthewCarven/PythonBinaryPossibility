@@ -23,8 +23,20 @@ Pure Python, standard library only, no dependencies.
 ```
 git clone https://github.com/MatthewCarven/PythonBinaryPossibility.git
 cd PythonBinaryPossibility
-python example.py
+python bench.py      # click bits, watch trees branch, render glitched audio
+python example.py    # the same ideas, on the command line
 ```
+
+Everything in the project rests on one gesture — `0` and `1` are decided, `?`
+is both:
+
+| module | what it puts in superposition |
+| --- | --- |
+| `BinaryPossibility.py` | bits, registers, and groups of registers |
+| `binarypossibilitytrees.py` | the branching shape of a possibility space |
+| `BinaryGlitch.py` | real bytes and text |
+| `PsynthRack.py` | steps in a drum pattern |
+| `bench.py` | all of the above, clickable |
 
 ## Registers and groups — `BinaryPossibility.py`
 
@@ -93,6 +105,50 @@ list(BinaryGlitch.glitch_text("Hello", 3, seed=42))  # 8 variants, 'Hello' among
 Variants stream lazily, and text decoding is safe by default (invalid byte
 sequences become `�`; pass `errors='strict'` to raise instead).
 
+## Superposition you can hear — `PsynthRack.py`
+
+A step sequencer where each step is a `BinaryPossibility`: `0` is silence, `1`
+is a hit, and `?` is undecided. A track *is* a `BinaryRegister`; a rack *is* a
+`BinaryRegisterGroup`. So the possibility model tells you something musical for
+free — how many distinct songs your pattern contains — and every render
+collapses into one of them.
+
+```python
+from PsynthRack import PsynthRack
+
+rack = PsynthRack.demo_rack()      # kick, snare, hat, bass
+rack.superpose_random(5, seed=11)  # the discrete superposition dial
+rack.possibility_count()           # -> 1024 possible songs
+
+rack.write_wav("take1.wav", rack.collapse(seed=1))
+rack.write_wav("take2.wav", rack.collapse(seed=2))  # same pattern, different song
+```
+
+`collapse()` flips a coin per undecided step rather than enumerating, so it
+works even when the rack holds more songs than you could ever render. When the
+space *is* small enough to walk, `iter_variants()` streams every one of them.
+
+Synthesis is `math` and output is `wave` — five waveforms, pitch sweeps, decay
+envelopes, and soft-clipping on the mix bus, with nothing to install.
+
+## Click it instead — `bench.py`
+
+```
+python bench.py
+```
+
+Three tabs, one gesture: click any cell to cycle it `0 → 1 → ? → 0`.
+
+- **Register** — a row of bits, with its live possibility count, its tree, and
+  every state it can reach.
+- **Glitch** — type text, superpose a few of its bits, read every string it
+  could decode to.
+- **Rack** — the step sequencer above, as a grid you can play. Collapse it
+  straight to a `.wav`.
+
+The GUI holds no possibility logic of its own — it drives the same classes your
+scripts do, so what you see is what you get.
+
 ## Conversions and file I/O — `BinaryConverter.py`
 
 ```python
@@ -112,6 +168,9 @@ Standard library only — nothing to install:
 ```
 python -m unittest
 ```
+
+121 tests. The GUI tests drive real Tk widgets and skip themselves
+automatically where there's no display.
 
 ## License
 
