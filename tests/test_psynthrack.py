@@ -342,3 +342,74 @@ class TestDemoRack(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWeightedSteps(unittest.TestCase):
+    """Steps that fire some of the time, not just maybe."""
+
+    def make_rack(self):
+        return PsynthRack(
+            Track(quiet_voice("a"), "????"),
+            Track(quiet_voice("b"), "????"),
+            sample_rate=RATE,
+        )
+
+    def test_steps_default_to_fair(self):
+        rack = self.make_rack()
+        self.assertEqual(rack.tracks[0].get_step_probability(0), 0.5)
+
+    def test_entropy_matches_step_count_when_fair(self):
+        rack = self.make_rack()
+        self.assertEqual(rack.entropy(), 8.0)
+        self.assertEqual(2 ** rack.entropy(), rack.possibility_count())
+
+    def test_weighting_lowers_entropy_but_not_the_song_count(self):
+        rack = self.make_rack()
+        before = rack.possibility_count()
+        rack.tracks[0].set_step_probability(0, 0.05)
+        self.assertEqual(rack.possibility_count(), before)
+        self.assertLess(rack.entropy(), 8.0)
+
+    def test_track_entropy(self):
+        track = Track(quiet_voice(), "1?0?")
+        self.assertEqual(track.entropy(), 2.0)
+        track.set_step_probability(1, 0.5)
+        self.assertEqual(track.entropy(), 2.0)
+
+    def test_ghost_notes_fire_at_their_stated_rate(self):
+        rack = self.make_rack()
+        for track in rack.tracks:
+            for index in range(len(track)):
+                track.set_step_probability(index, 0.2)
+        hits = total = 0
+        for seed in range(400):
+            for pattern in rack.collapse(seed=seed):
+                hits += pattern.count("1")
+                total += len(pattern)
+        self.assertAlmostEqual(hits / total, 0.2, delta=0.03)
+
+    def test_a_never_step_never_fires(self):
+        rack = self.make_rack()
+        rack.tracks[0].set_step_probability(0, 0.0)
+        self.assertTrue(all(rack.collapse(seed=s)[0][0] == "0" for s in range(50)))
+
+    def test_an_always_step_always_fires(self):
+        rack = self.make_rack()
+        rack.tracks[0].set_step_probability(0, 1.0)
+        self.assertTrue(all(rack.collapse(seed=s)[0][0] == "1" for s in range(50)))
+
+    def test_superpose_random_can_set_the_odds(self):
+        rack = PsynthRack(Track(quiet_voice(), "0000"), sample_rate=RATE)
+        rack.superpose_random(4, seed=1, p=0.25)
+        self.assertEqual(
+            [rack.tracks[0].get_step_probability(i) for i in range(4)], [0.25] * 4
+        )
+
+    def test_weighted_collapse_still_renders(self):
+        rack = self.make_rack()
+        rack.tracks[0].set_step_probability(0, 0.9)
+        samples = rack.render(rack.collapse(seed=1))
+        self.assertTrue(all(-1.0 <= s <= 1.0 for s in samples))
+
+    def test_empty_rack_entropy_is_zero(self):
+        self.assertEqual(PsynthRack().entropy(), 0.0)

@@ -8,11 +8,12 @@ freely.
 Two pieces of work large enough to have their own design docs. Detailed
 checklists live in the plans; only the headline sits here.
 
-- [ ] **[PLAN-probability.md](PLAN-probability.md)** — per-bit probability,
+- [x] **[PLAN-probability.md](PLAN-probability.md)** — ~~per-bit probability,
       entropy as the generalised possibility count, likelihood-ordered
       enumeration, measuring real streams, weighted collapse, and runnable
-      demos of the hard limits. **Do this first**; the compression work
-      depends on it.
+      demos of the hard limits.~~ **Done 2026-08-06.** Shipped
+      `BinaryEntropy.py`, `randomness_demo.py`, weighted steps in the rack
+      and odds controls in the bench. The compression thread is unblocked.
 - [ ] **[PLAN-compression.md](PLAN-compression.md)** — Phase 1 is an honest
       benchmark against gzip/lzma/**FLAC** on real data, with kill criteria
       agreed in advance. The codec only gets built if the benchmark earns it.
@@ -48,8 +49,8 @@ checklists live in the plans; only the headline sits here.
       format already).
 - [ ] Bench: undo, and a "collapse in place" button that commits the dice roll
       back into the grid.
-- [ ] Weighted steps in the rack once PLAN-probability.md lands — a step that
-      fires 20% of the time is a better musical dial than on/off/maybe.
+- [x] ~~Weighted steps in the rack~~ — done 2026-08-06; right-click a step in
+      the bench to set how often it fires.
 
 ## Ideas, unscheduled
 

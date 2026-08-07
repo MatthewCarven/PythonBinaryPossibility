@@ -7,6 +7,7 @@ from BinaryPossibility import BinaryRegister, BinaryRegisterGroup
 from binarypossibilitytrees import render_possibility_tree
 from BinaryGlitch import BinaryGlitch
 from PsynthRack import PsynthRack
+from BinaryEntropy import BinaryEntropy
 
 # ---------------------------------------------------------------
 # 1. A single register: collapse bits, watch the possibility space
@@ -70,7 +71,33 @@ for variant in BinaryGlitch.glitch_text("Hello", 3, seed=42):
     print(f"  {variant!r}")
 
 # ---------------------------------------------------------------
-# 5. Psynthrack: superposition you can hear
+# 5. Weighted possibilities: what's likely, not just what's possible
+# ---------------------------------------------------------------
+print()
+print("A ? is a fair coin until you weight it.")
+weighted = BinaryRegister(3)
+print(f"  fair:   {weighted.calculate_possibility_count()} states, "
+      f"{weighted.entropy():.2f} bits of uncertainty  "
+      f"(2**{weighted.entropy():.0f} = {2 ** weighted.entropy():.0f}, they agree)")
+weighted.set_bit_probability(0, 0.95)
+weighted.set_bit_probability(1, 0.90)
+print(f"  weighted: {weighted.calculate_possibility_count()} states still possible, "
+      f"but only {weighted.entropy():.2f} bits of uncertainty")
+print()
+print("  Most likely first -- the states, and their odds:")
+for state, probability in weighted.iter_states_by_likelihood():
+    print(f"    {state}   {probability:.4f}")
+print()
+print("  Counting says what could happen; entropy says what probably will.")
+
+# Measuring, rather than choosing, where the ?s go.
+print()
+print("Measured from data instead of chosen -- a stream of 11?? records:")
+observed = [0b1100 | (index & 0b0011) for index in range(1000)]
+print("  " + BinaryEntropy.describe(observed, 4, name="stream").replace("\n", "\n  "))
+
+# ---------------------------------------------------------------
+# 6. Psynthrack: superposition you can hear
 # ---------------------------------------------------------------
 print()
 print("A step sequencer whose undecided steps make undecided music:")

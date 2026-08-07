@@ -27,7 +27,7 @@ what your scripts will do.
 
 import os
 import tkinter as tk
-from tkinter import filedialog, font, messagebox, ttk
+from tkinter import filedialog, font, messagebox, simpledialog, ttk
 from itertools import islice
 
 from BinaryGlitch import BinaryGlitch
@@ -58,17 +58,53 @@ STATE_PREVIEW_LIMIT = 512
 TREE_LEAF_LIMIT = 64
 
 
-def _style_cell(button: tk.Button, state) -> None:
-    """Paint a bit/step button to match its state."""
+def _mix(colour_a: str, colour_b: str, amount: float) -> str:
+    """Blend two #rrggbb colours; ``amount`` 0.0 gives a, 1.0 gives b."""
+    a = [int(colour_a[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(colour_b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(
+        f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b)
+    )
+
+
+def _superposed_colour(p: float) -> str:
+    """Shade a superposed cell towards whatever it will probably become.
+
+    Fair bits stay the neutral violet.  A bit that leans towards 1 drifts
+    towards the 'on' green, one that leans towards 0 drifts towards the
+    'off' grey -- but only part of the way, so a `?` still reads as a `?`.
+    """
+    # How far towards the destination colour a near-certainty gets. High
+    # enough that a ghost note is spottable at a glance across a 16-step
+    # grid, short of 1.0 so a `?` never masquerades as a decided cell.
+    lean = 0.85
+    if p >= 0.5:
+        return _mix(SUPER_BG, ONE_BG, (p - 0.5) * 2 * lean)
+    return _mix(SUPER_BG, ZERO_BG, (0.5 - p) * 2 * lean)
+
+
+def _style_cell(button: tk.Button, state, p: float = 0.5) -> None:
+    """Paint a bit/step button to match its state and its odds."""
     if state is None:
-        button.configure(text="?", bg=SUPER_BG, fg=SUPER_FG,
-                         activebackground=SUPER_BG)
+        colour = _superposed_colour(p)
+        button.configure(text="?", bg=colour, fg=SUPER_FG,
+                         activebackground=colour)
     elif state == 1:
         button.configure(text="1", bg=ONE_BG, fg=ONE_FG,
                          activebackground=ONE_BG)
     else:
         button.configure(text="0", bg=ZERO_BG, fg=ZERO_FG,
                          activebackground=ZERO_BG)
+
+
+def _ask_probability(parent, current: float, what: str) -> "float | None":
+    """Prompt for a 0..1 probability. Returns None if cancelled."""
+    return simpledialog.askfloat(
+        "Odds",
+        f"How often should this {what} come out as 1?\n"
+        f"0.0 never  ·  0.5 fair coin  ·  1.0 always",
+        initialvalue=current, minvalue=0.0, maxvalue=1.0, parent=parent,
+    )
 
 
 def _pretty_count(count: int) -> str:
@@ -91,7 +127,8 @@ class RegisterBench(ttk.Frame):
 
         header = ttk.Label(
             self,
-            text="Click a bit to cycle it:  0  →  1  →  ?  →  0",
+            text="Click a bit to cycle it:  0  →  1  →  ?  →  0"
+                 "        Right-click a ? to set its odds.",
             style="Hint.TLabel",
         )
         header.pack(anchor="w")
@@ -120,7 +157,7 @@ class RegisterBench(ttk.Frame):
         tree_box.pack(side="left", fill="both", expand=True)
         self.tree_text = self._make_text(tree_box)
 
-        state_box = ttk.LabelFrame(panes, text=" reachable states ", padding=8)
+        state_box = ttk.LabelFrame(panes, text=" states, likeliest first ", padding=8)
         state_box.pack(side="left", fill="both", expand=True, padx=(12, 0))
         self.state_text = self._make_text(state_box)
 
@@ -156,12 +193,23 @@ class RegisterBench(ttk.Frame):
                 font=self.mono, cursor="hand2",
                 command=lambda i=index: self.cycle(i),
             )
+            button.bind("<Button-3>", lambda _event, i=index: self.set_odds(i))
             button.pack(side="left", padx=2)
             self.cells.append(button)
         self.refresh()
 
     def cycle(self, index: int) -> None:
         self.register.set_bit(index, NEXT_STATE[self.register.get_bit(index)])
+        self.refresh()
+
+    def set_odds(self, index: int) -> None:
+        """Right-click handler: weight a superposed bit."""
+        if self.register.get_bit(index) is not None:
+            return  # a decided bit has no odds to set
+        p = _ask_probability(self, self.register.get_bit_probability(index), "bit")
+        if p is None:
+            return
+        self.register.set_bit_probability(index, p)
         self.refresh()
 
     def set_all(self, state) -> None:
@@ -185,14 +233,17 @@ class RegisterBench(ttk.Frame):
 
     def refresh(self) -> None:
         for index, cell in enumerate(self.cells):
-            _style_cell(cell, self.register.get_bit(index))
+            _style_cell(cell, self.register.get_bit(index),
+                        self.register.get_bit_probability(index))
 
         count = self.register.calculate_possibility_count()
+        entropy = self.register.entropy()
         superposed = sum(
             1 for p in self.register.get_individual_states() if p.is_superposition()
         )
         self.count_label.configure(
             text=f"{_pretty_count(count)} possible states"
+            f"   ·   {entropy:.2f} bits of uncertainty"
             f"   ·   {superposed} of {len(self.register)} bits superposed"
         )
 
@@ -207,9 +258,15 @@ class RegisterBench(ttk.Frame):
         else:
             self.tree_text.insert("1.0", BinaryPossibilityTree(self.register).render())
 
+        # Most-likely-first, so weighting a bit visibly reorders the list.
         self.state_text.delete("1.0", "end")
-        shown = list(islice(self.register.iter_states(), STATE_PREVIEW_LIMIT))
-        body = "\n".join(shown)
+        shown = list(islice(self.register.iter_states_by_likelihood(),
+                            STATE_PREVIEW_LIMIT))
+        fair = self.register.is_fair()
+        body = "\n".join(
+            state if fair else f"{state}  {probability:.4f}"
+            for state, probability in shown
+        )
         if count > len(shown):
             body += f"\n\n… and {count - len(shown):,} more.\n(Streamed lazily "
             body += "— nothing built the full list.)"
@@ -309,7 +366,9 @@ class RackBench(ttk.Frame):
         ttk.Label(
             self,
             text="Each step is a bit: 0 silent, 1 hit, ? undecided. "
-                 "Every ? doubles the number of songs this pattern holds.",
+                 "Every ? doubles the number of songs this pattern holds.\n"
+                 "Right-click a ? to set how often it fires — 0.2 makes a "
+                 "ghost note that turns up in a fifth of takes.",
             style="Hint.TLabel",
         ).pack(anchor="w")
 
@@ -364,6 +423,10 @@ class RackBench(ttk.Frame):
                     font=self.mono, cursor="hand2",
                     command=lambda t=track_index, s=step_index: self.cycle(t, s),
                 )
+                button.bind(
+                    "<Button-3>",
+                    lambda _e, t=track_index, s=step_index: self.set_odds(t, s),
+                )
                 # A wider gap every four steps, so the beat is readable.
                 pad = (1, 7) if step_index % 4 == 3 else (1, 1)
                 button.grid(row=track_index, column=step_index + 1, padx=pad,
@@ -373,6 +436,17 @@ class RackBench(ttk.Frame):
 
     def cycle(self, track_index: int, step_index: int) -> None:
         self.rack.tracks[track_index].cycle_step(step_index)
+        self.refresh()
+
+    def set_odds(self, track_index: int, step_index: int) -> None:
+        """Right-click handler: weight a superposed step."""
+        track = self.rack.tracks[track_index]
+        if track.get_step(step_index) is not None:
+            return  # a decided step has no odds to set
+        p = _ask_probability(self, track.get_step_probability(step_index), "step")
+        if p is None:
+            return
+        track.set_step_probability(step_index, p)
         self.refresh()
 
     def superpose(self) -> None:
@@ -387,12 +461,23 @@ class RackBench(ttk.Frame):
     def refresh(self) -> None:
         for track_index, track in enumerate(self.rack.tracks):
             for step_index, cell in enumerate(self.cells[track_index]):
-                _style_cell(cell, track.get_step(step_index))
+                _style_cell(cell, track.get_step(step_index),
+                            track.get_step_probability(step_index))
         count = self.rack.possibility_count()
-        self.count_label.configure(
-            text=f"{_pretty_count(count)} possible songs"
+        weighted = sum(
+            1
+            for track in self.rack.tracks
+            for bit in track.register.get_individual_states()
+            if bit.is_superposition() and not bit.is_fair()
+        )
+        text = (
+            f"{_pretty_count(count)} possible songs"
+            f"   ·   {self.rack.entropy():.2f} bits of uncertainty"
             f"   ·   {self.rack.superposed_step_count()} steps undecided"
         )
+        if weighted:
+            text += f" ({weighted} weighted)"
+        self.count_label.configure(text=text)
 
     def render(self) -> None:
         self.rack.bpm = float(self.bpm_var.get())

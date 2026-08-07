@@ -35,8 +35,10 @@ is both:
 | `BinaryPossibility.py` | bits, registers, and groups of registers |
 | `binarypossibilitytrees.py` | the branching shape of a possibility space |
 | `BinaryGlitch.py` | real bytes and text |
+| `BinaryEntropy.py` | nothing — it *measures* where the `?`s already are |
 | `PsynthRack.py` | steps in a drum pattern |
 | `bench.py` | all of the above, clickable |
+| `randomness_demo.py` | the limits of all of it, demonstrated not claimed |
 
 ## Registers and groups — `BinaryPossibility.py`
 
@@ -60,6 +62,61 @@ however many bits you add:
 for state in reg.iter_states():
     ...  # lazy: one state at a time
 ```
+
+## Weighted possibilities — likely, not just possible
+
+A `?` is a fair coin until you weight it. Give a bit odds and a second question
+opens up alongside the first: not just *how many* states are reachable, but *how
+much you actually don't know*.
+
+```python
+reg = BinaryRegister(3)
+reg.calculate_possibility_count()   # -> 8 states
+reg.entropy()                       # -> 3.0 bits   (2**3 == 8, they agree)
+
+reg.set_bit_probability(0, 0.95)    # this bit almost always comes out 1
+reg.calculate_possibility_count()   # -> 8   (still just as possible)
+reg.entropy()                       # -> 2.29 bits (but far less uncertain)
+```
+
+When every superposed bit is fair, `2 ** entropy()` *is* the possibility count —
+entropy generalises counting rather than replacing it. Bias a bit and the two
+part company, and the gap is the useful bit: counting says what could happen,
+entropy says what probably will.
+
+Which makes ordering possible. `iter_states_by_likelihood()` yields states
+most-likely-first, lazily, via A\* over the possibility tree — so you can take
+the top handful of a space with 2^500 states in it without enumerating anything:
+
+```python
+for state, probability in reg.iter_states_by_likelihood():
+    print(state, probability)       # 110 0.4275, 111 0.4275, 100 0.0475, …
+```
+
+Collapsing honours the odds too, one weighted coin per bit — no enumeration, so
+it works however large the space gets.
+
+## Measuring, instead of choosing — `BinaryEntropy.py`
+
+Everywhere else a `?` is something you decide. Here it's something you find out.
+Feed in a stream of fixed-width records and get back a register describing what
+that data actually does:
+
+```python
+from BinaryEntropy import BinaryEntropy
+
+reg = BinaryEntropy.register_from_stream(records, width=4)
+reg                       # BinaryRegister('11??')  — recovered from the data
+reg.entropy()             # 2.0 bits of real information per 4 stored
+```
+
+Two things the numbers will tell you if you let them. **Measure locally** —
+over a long stream nearly every bit position moves *somewhere*, so a whole-stream
+register drifts towards all-`?` and says nothing; `blocked_registers()` looks
+within windows, which is usually where structure actually lives. And **this sees
+one kind of structure only**: a counter whose every bit varies looks like pure
+noise to it, and is in fact trivially predictable. A low reading is real; a high
+one only means this particular lens found nothing.
 
 ## Possibility trees — `binarypossibilitytrees.py`
 
@@ -161,6 +218,23 @@ BinaryConverter.to_file_as_bin_str("out.txt", b"Hi")  # save as visible 1s and 0
 
 Plus byte/string file helpers for saving and loading any of the above.
 
+## The limits — `randomness_demo.py`
+
+```
+python randomness_demo.py
+```
+
+Possibility spaces invite a particular kind of overselling — that marking bits
+`?` is a way to get data for free. It isn't, and this prints the numbers that
+say so: a trit costs 1.585 bits, so a register is 58.5% *larger* than the string
+it describes; at most 1 in 2^(k−1) strings can be compressed by k bits; 120KB of
+noise that gzip and lzma both make *bigger* comes from a 68-byte line of Python;
+and the same bytes in two different orders sit at opposite ends of what any
+compressor can do.
+
+The `?`s never save anything by themselves. Every win comes from a model both
+ends already agree on, and the bits simply move into that model.
+
 ## Running the tests
 
 Standard library only — nothing to install:
@@ -169,7 +243,7 @@ Standard library only — nothing to install:
 python -m unittest
 ```
 
-121 tests. The GUI tests drive real Tk widgets and skip themselves
+213 tests. The GUI tests drive real Tk widgets and skip themselves
 automatically where there's no display.
 
 ## License

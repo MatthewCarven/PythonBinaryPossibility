@@ -3,6 +3,64 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-06 — Thread A built: probability, entropy, and the limits (Claude)
+
+Executed PLAN-probability.md end to end. 121 -> 213 tests, all green, and the
+existing 121 pass unedited, which was the compatibility gate.
+
+**Shipped**
+- `BinaryPossibility`: per-bit `p` (default 0.5), `entropy()`,
+  `probability_of()`, `collapse()`. `p` survives collapse and
+  re-superposition. `__str__` only mentions odds when they're not fair, so
+  the old strings are byte-identical.
+- `BinaryRegister` / `BinaryRegisterGroup`: `entropy()`,
+  `probability_of_state()`, `iter_states_by_likelihood()`, weighted
+  `collapse()`, probability setters. Group entropy adds where counts multiply.
+- `BinaryEntropy.py` (new): measures where the `?`s already are rather than
+  choosing them. `register_from_stream` recovers structure from data (a
+  stream of `11??` records comes back as `BinaryRegister('11??')`), plus
+  blocked variants, entropy reporting and a printable `describe()`.
+- `randomness_demo.py` (new): the four hard limits, runnable — trit cost,
+  counting bound, PRNG paradox, and order-is-everything.
+- `PsynthRack`: per-step odds, `entropy()`, and `superpose_random(p=...)`.
+  Ghost notes that fire a fifth of the time.
+- `bench.py`: right-click any `?` to set its odds; superposed cells shade
+  towards whatever they'll probably become; entropy shown beside the count;
+  the state list is now ordered by likelihood with probabilities.
+
+**The bug worth remembering**
+`iter_states_by_likelihood()` was first written as plain best-first search
+keyed on cost-so-far. That is admissible but practically useless: every
+shallow prefix outranks every deep complete state, so it expands nearly the
+whole tree before emitting anything. A 200-bit register never returned — the
+laziness test caught it by *hanging*, not failing, which is worth knowing as
+a failure mode. Fixed by making it A*: add the cheapest possible cost of
+finishing, precomputed as a suffix sum, so each node's key equals the best
+complete state beneath it. Top-5 of a 2^500 space now takes 81ms. Added a
+brute-force cross-check over 200 randomised registers, because a clever
+algorithm deserves a stupid one checking it.
+
+**Decisions**
+- Weighted collapse changes what a given seed produces (`rng.random() < p`
+  replaces `rng.randint(0, 1)`). Deliberate: preserving the old draw meant
+  branching on `p == 0.5` forever. Documented in the plan.
+- `p=0.0` / `p=1.0` allowed on a superposed bit: count says 2, entropy says
+  0, and the disagreement is informative. Impossible states still enumerate,
+  last, at probability 0.0.
+- Colour lean in the bench raised from 0.7 to 0.85 after checking actual
+  widget colours — the ramp was correct but too subtle to read at cell size.
+
+**Verification**
+213 tests both with a display (Tk tests run) and without (they skip);
+pyflakes clean; bench re-screenshotted under Xvfb with weighted bits and
+ghost notes visible; colour mapping verified by reading widget properties
+rather than by eye, which is what caught the contrast problem.
+
+**Not done, honestly**
+Rendering likelihood in the ASCII tree (thicker branch = likelier). Left
+unticked in the plan — the tree has no weight to vary short of swapping
+characters, so it wants a moment's design first.
+
 ## 2026-08-06 — Could this drive compression? Measured, then split into two plans
 
 Matthew asked whether the possibility model could drive a compression

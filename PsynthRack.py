@@ -198,6 +198,18 @@ class Track:
         """Return a step's state: 0, 1, or None."""
         return self.register.get_bit(index)
 
+    def set_step_probability(self, index: int, p: float) -> None:
+        """Set how often a superposed step fires -- 0.2 for a rare ghost note."""
+        self.register.set_bit_probability(index, p)
+
+    def get_step_probability(self, index: int) -> float:
+        """Return how often a superposed step fires."""
+        return self.register.get_bit_probability(index)
+
+    def entropy(self) -> float:
+        """Bits of real uncertainty in this track's pattern."""
+        return self.register.entropy()
+
     def cycle_step(self, index: int) -> Optional[int]:
         """Advance a step 0 -> 1 -> ? -> 0 and return the new state.
 
@@ -286,6 +298,18 @@ class PsynthRack:
             if possibility.is_superposition()
         )
 
+    def entropy(self) -> float:
+        """Bits of real uncertainty across the whole rack.
+
+        With every step fair this equals :meth:`superposed_step_count` and
+        ``2 ** entropy()`` is the song count.  Bias the steps and it drops
+        below both -- the rack still *could* produce as many songs, but
+        most of them became unlikely.
+        """
+        if not self.tracks:
+            return 0.0
+        return self.group().entropy()
+
     @property
     def step_duration(self) -> float:
         """Length of a single step in seconds."""
@@ -293,12 +317,19 @@ class PsynthRack:
 
     # --- Adding superposition ---
 
-    def superpose_random(self, count: int, seed: Optional[int] = None) -> "PsynthRack":
+    def superpose_random(
+        self,
+        count: int,
+        seed: Optional[int] = None,
+        p: Optional[float] = None,
+    ) -> "PsynthRack":
         """Put ``count`` randomly chosen steps across the rack into superposition.
 
         This is the 'discrete amount of superposition' dial: ``count`` bits
         of undecidedness means ``2 ** count`` times more possible songs.
-        Pass ``seed`` to choose the same steps every time. Returns self.
+        Pass ``seed`` to choose the same steps every time, and ``p`` to set
+        how often those steps fire (default leaves each step's existing
+        odds alone). Returns self.
         """
         slots = [
             (track_index, step_index)
@@ -310,28 +341,24 @@ class PsynthRack:
         rng = random.Random(seed)
         for track_index, step_index in rng.sample(slots, count):
             self.tracks[track_index].set_step(step_index, None)
+            if p is not None:
+                self.tracks[track_index].set_step_probability(step_index, p)
         return self
 
     # --- Collapsing ---
 
     def collapse(self, seed: Optional[int] = None) -> List[str]:
-        """Collapse every superposed step at random and return one pattern per track.
+        """Collapse every superposed step and return one pattern per track.
 
-        This flips a coin per undecided step rather than enumerating, so it
-        works even when the rack holds more songs than there are atoms in
-        anything.  The rack itself is left untouched -- pass the returned
-        patterns to :meth:`render` or :meth:`write_wav`.
+        Flips one *weighted* coin per undecided step rather than
+        enumerating, so it works even when the rack holds more songs than
+        there are atoms in anything.  A step left at the default 0.5 is a
+        fair coin; set it to 0.2 and it becomes a ghost note that shows up
+        in a fifth of takes.  The rack itself is left untouched -- pass the
+        returned patterns to :meth:`render` or :meth:`write_wav`.
         """
         rng = random.Random(seed)
-        patterns = []
-        for track in self.tracks:
-            patterns.append(
-                "".join(
-                    str(rng.randint(0, 1)) if char == "?" else char
-                    for char in track.pattern()
-                )
-            )
-        return patterns
+        return [track.register.collapse(rng=rng) for track in self.tracks]
 
     def iter_variants(self) -> Iterator[List[str]]:
         """Lazily yield every possible song as a list of per-track patterns.

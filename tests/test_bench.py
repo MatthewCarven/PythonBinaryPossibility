@@ -199,3 +199,93 @@ class TestRackBench(BenchTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRegisterBenchOdds(BenchTestCase):
+    def test_setting_odds_recolours_the_cell(self):
+        self.register_bench.set_all(None)
+        fair = self.register_bench.cells[0].cget("bg")
+        self.register_bench.register.set_bit_probability(0, 0.05)
+        self.register_bench.refresh()
+        self.assertNotEqual(self.register_bench.cells[0].cget("bg"), fair)
+
+    def test_colour_ramp_is_monotonic_and_distinct(self):
+        colours = [bench._superposed_colour(p)
+                   for p in (0.0, 0.25, 0.5, 0.75, 1.0)]
+        self.assertEqual(len(set(colours)), 5)
+
+    def test_a_fair_bit_keeps_the_neutral_colour(self):
+        self.assertEqual(bench._superposed_colour(0.5), bench.SUPER_BG)
+
+    def test_entropy_appears_alongside_the_count(self):
+        self.register_bench.set_all(None)
+        self.assertIn("bits of uncertainty",
+                      self.register_bench.count_label.cget("text"))
+
+    def test_weighting_lowers_reported_entropy(self):
+        self.register_bench.set_all(None)
+        before = self.register_bench.register.entropy()
+        self.register_bench.register.set_bit_probability(0, 0.02)
+        self.register_bench.refresh()
+        self.assertLess(self.register_bench.register.entropy(), before)
+
+    def test_state_list_is_ordered_by_likelihood(self):
+        self.register_bench.set_all(None)
+        self.register_bench.register.set_bit_probability(0, 0.95)
+        self.register_bench.refresh()
+        body = self.register_bench.state_text.get("1.0", "end").strip()
+        first = body.splitlines()[0]
+        self.assertTrue(first.startswith("1"), msg=first)
+
+    def test_odds_shown_only_when_biased(self):
+        self.register_bench.set_all(None)
+        self.register_bench.refresh()
+        self.assertNotIn(".", self.register_bench.state_text.get("1.0", "2.0"))
+        self.register_bench.register.set_bit_probability(0, 0.7)
+        self.register_bench.refresh()
+        self.assertIn(".", self.register_bench.state_text.get("1.0", "2.0"))
+
+    def test_set_odds_ignores_decided_bits(self):
+        # Should return without prompting; a dialog here would hang the suite.
+        self.register_bench.set_all(1)
+        self.register_bench.set_odds(0)
+        self.assertEqual(self.register_bench.register.get_bit_probability(0), 0.5)
+
+
+class TestRackBenchOdds(BenchTestCase):
+    def test_entropy_and_weighted_count_reported(self):
+        rack = self.rack_bench.rack
+        rack.tracks[0].set_step(0, None)
+        rack.tracks[0].set_step_probability(0, 0.2)
+        self.rack_bench.refresh()
+        label = self.rack_bench.count_label.cget("text")
+        self.assertIn("bits of uncertainty", label)
+        self.assertIn("weighted", label)
+
+    def test_no_weighted_note_when_all_fair(self):
+        for track in self.rack_bench.rack.tracks:
+            for index in range(len(track)):
+                track.set_step_probability(index, 0.5)
+        self.rack_bench.refresh()
+        self.assertNotIn("weighted", self.rack_bench.count_label.cget("text"))
+
+    def test_ghost_note_is_visibly_different(self):
+        track = self.rack_bench.rack.tracks[0]
+        track.set_step(0, None)
+        self.rack_bench.refresh()
+        fair = self.rack_bench.cells[0][0].cget("bg")
+        track.set_step_probability(0, 0.2)
+        self.rack_bench.refresh()
+        self.assertNotEqual(self.rack_bench.cells[0][0].cget("bg"), fair)
+
+    def test_set_odds_ignores_decided_steps(self):
+        self.rack_bench.rack.tracks[0].set_step(0, 1)
+        self.rack_bench.set_odds(0, 0)
+        self.assertEqual(self.rack_bench.rack.tracks[0].get_step_probability(0), 0.5)
+
+    def test_weighted_rack_still_renders(self):
+        rack = self.rack_bench.rack
+        rack.tracks[0].set_step(0, None)
+        rack.tracks[0].set_step_probability(0, 0.15)
+        samples = rack.render(rack.collapse(seed=1))
+        self.assertTrue(all(-1.0 <= s <= 1.0 for s in samples))
