@@ -43,19 +43,68 @@ depend on the path — the one thing a per-position model cannot express.
 Against Rice it is a wash everywhere *except* structured, counter-like data,
 where it is dramatically better for the same order of cost.
 
-So Phase 2 is earned, but aimed narrowly: **numerically structured binary at
-wide symbol sizes**, where a bit-tree is unaffordable and Rice is too blunt.
-Not audio, and not as a general-purpose compressor.
+So Phase 2 is earned, aimed at **numerically structured binary at wide symbol
+sizes**, where a bit-tree is unaffordable and Rice is too blunt. Real music
+(below) softens the "not audio" part: the models beat every general-purpose
+compressor there and only lose to FLAC on the strength of its *predictor*, not
+its describer. Improving the predictor is the obvious Phase 2 side-quest, and
+it is orthogonal to the register.
 
-### Corpus limitation, stated plainly
+### Real music, added the same day
+
+Matthew supplied a 3.5-minute vocal take (44.1 kHz stereo, from a 320 kbps
+MP3). Genuinely full-depth — 41,061 distinct values, low byte zero 0.46%
+against 43% for the degenerate gallery files. Three 16-second mono excerpts
+went into the corpus:
+
+| item | gzip | lzma | bz2 | **flac** | rice | **register** | bit-tree |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| vocal-loud | 1.20× | 1.38× | 1.48× | **2.19×** | 1.89× | 1.87× | 1.90× |
+| vocal-quiet | 1.69× | 2.21× | 2.41× | **3.08×** | 2.57× | 2.60× | 2.60× |
+| vocal-mid | 1.29× | 1.62× | 1.78× | **2.53×** | 2.09× | 2.09× | 2.11× |
+
+Three things fall out, and two of them revise the earlier conclusion.
+
+**Predict-and-cancel is vindicated against general-purpose compressors.** On
+real music the models beat gzip, lzma *and* bz2 by 20–55%. Across the whole
+corpus that is now 4 of 6 full-depth real signals, where before it was 1.
+
+**On real music the three describers converge.** Register 1.87× against
+bit-tree 1.90× on the loud excerpt, and a dead heat on the quiet one. The
+per-node model's extra context buys almost nothing here, because these
+residuals are wide and noise-dominated. So the register gives up essentially
+*nothing* to a bit-tree on real audio while using 16 parameters against
+65,536 — which strengthens the bounded-memory reading rather than weakening it.
+
+**FLAC still wins, by 15–18%, and the gap is in the predictor, not the
+describer.** All three describers land within 1% of each other, so what
+separates them from FLAC is that FLAC computes adaptive linear-prediction
+coefficients per block while this harness uses fixed orders 0–3. That is an
+actionable target for Phase 2 and it is not where the possibility register
+lives at all.
+
+One caveat Matthew already anticipated: the source was a 320 kbps MP3, and
+the bottom eight bits of the decoded signal measure entropy 1.0000 — pure
+coin-flips from the decoder's rounding. Half of every sample is therefore
+incompressible by anything, which caps every ratio in that table. A raw
+recording would give all the codecs more to work with; the *relative*
+standings should hold.
+
+### Corpus limitation, mostly resolved
 
 Most of the system's audio gallery is 8-bit sound inside a 16-bit container —
 `gong.wav` holds 1,162 distinct values out of 65,536, low byte zero 43% of the
 time. Byte-oriented compressors exploit that for free while sample-oriented
 ones cannot, which made bz2 appear to beat FLAC 2:1 on the first run. Those
-items are now detected, marked, and excluded from the verdict, leaving only
-four genuinely full-depth real signals. **The audio conclusions are therefore
-provisional** and want re-running against real music.
+items are detected, marked `!`, and excluded from the verdict.
+
+The detector itself had to be fixed once the vocal take arrived: it originally
+tested distinct-values-per-*sample*, which falls as a stream gets longer
+regardless of quality, so a three-minute full-depth recording (41,000 distinct
+values across 9 million samples — 0.4%, but 63% of the entire 16-bit range)
+was misclassified as degenerate. It now tests the share of samples whose low
+byte is zero, where genuine 16-bit sits near 0.4% and upsampled 8-bit near
+43% — two orders of magnitude apart, so the threshold is not delicate.
 
 ## Context — the question, and what was already measured
 
@@ -231,6 +280,13 @@ is the clearest possible statement of where compression actually lives.
       the full-scale run as an opt-in
 - [ ] Verify the reduced-scale results actually predict the full-scale ones on
       at least one case, rather than assuming the scaling holds
+- [x] Real music in the corpus (Matthew's vocal take, 2026-08-06). Stereo is
+      reduced to the left channel and long files to a 700k-sample excerpt,
+      since the pure-Python coders run at roughly 100k samples/second
+- [ ] **Adaptive linear prediction (LPC) to close the FLAC gap** — all three
+      describers tie within 1% on real music, so the entire 15-18% deficit is
+      the fixed-order predictor. Orthogonal to the register; likely the
+      highest-value single change available
 - [x] Baselines: `gzip`, `lzma`, `bz2` and **FLAC** — the one that actually matters
       for audio and the one most likely to be humbling
 - [x] Re-run the three models (whole-stream, blocked, predict-and-cancel) on

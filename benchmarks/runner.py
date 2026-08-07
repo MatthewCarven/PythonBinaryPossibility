@@ -147,15 +147,20 @@ def main(argv=None) -> int:
         if "REDUCED DEPTH" not in note:
             print(f"    {name:<20} {note}")
 
+    measured = {}
+    for rows in by_kind.values():
+        for name, results, _ in rows:
+            measured[name] = results
+
     print()
     print(f"  ({time.time() - started:.1f}s)")
     print()
-    component_tradeoff(items)
+    component_tradeoff(items, measured)
     verdict(by_kind)
     return 0
 
 
-def component_tradeoff(items) -> None:
+def component_tradeoff(items, measured=None) -> None:
     """The question that actually matters: what does the register COST?
 
     Ratio alone says the bit-tree wins everywhere. Ratio per unit of model
@@ -177,9 +182,16 @@ def component_tradeoff(items) -> None:
               and "seeded" not in i.name]
     for item in chosen:
         raw = item.raw_bits
+        # Reuse what the tables already measured; recomputing here doubled
+        # the runtime of a long sweep for no new information.
+        cached = (measured or {}).get(item.name, {})
         row = {}
-        for describe in ("rice", "register", "bittree"):
-            row[describe] = raw / coders.predict_then_bits(item, describe)
+        for describe, column in (("rice", "predict+rice"),
+                                 ("register", "predict+register"),
+                                 ("bittree", "predict+bittree")):
+            row[describe] = cached.get(column) or (
+                raw / coders.predict_then_bits(item, describe)
+            )
         reg_state = coders.model_state(item, "register")
         tree_state = coders.model_state(item, "bittree")
         tree_text = f"{tree_state:,}" if tree_state < 10 ** 9 else "unbuildable"

@@ -25,10 +25,17 @@ checklists live in the plans; only the headline sits here.
 ## Next up
 
 - [ ] **Push the latest commit** (meatthread0 — Claude doesn't push).
-- [ ] **Re-run the benchmark against real music** — `python -m benchmarks.runner
-      yourfile.wav`. The system audio gallery turned out to be 8-bit sound in a
-      16-bit container, so the audio conclusions are provisional until this
-      happens. Everything else in Phase 1 stands.
+- [x] ~~Re-run the benchmark against real music~~ — done 2026-08-06 with
+      Matthew's vocal take. Predict-and-cancel beat gzip/lzma/bz2 by 20-55%;
+      the three describers tied within 1%; FLAC still won by 15-18%.
+- [ ] **Adaptive LPC predictor** — since all three describers tie on real
+      music, the whole FLAC gap is its per-block linear-prediction
+      coefficients versus our fixed orders 0-3. Orthogonal to the register
+      and the highest-value single change available. Top of Phase 2.
+- [ ] **Re-run on a RAW recording** when Matthew has one — the current take
+      came from a 320 kbps MP3, whose decoder rounding leaves the bottom
+      eight bits at entropy 1.0000. Half of every sample is incompressible by
+      anything, capping every ratio measured.
 - [ ] **Linked bits ("entanglement")**: constrain two bits to collapse
       together (equal or opposite), shrinking the possibility space the way
       the quantum framing suggests. Musical payoff too: entangled steps across

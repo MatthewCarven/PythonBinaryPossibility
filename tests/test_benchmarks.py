@@ -189,3 +189,89 @@ class TestBaselines(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDepthHeuristic(unittest.TestCase):
+    """The classifier that decides which audio is fit to judge on.
+
+    It was originally distinct-values-per-sample, which is wrong: that ratio
+    falls as a stream gets longer regardless of quality. A three-minute
+    full-depth recording has 41,000 distinct values across 9 million samples
+    -- 0.4%, which looks damning until you notice it is 63% of the 16-bit
+    range. The low-byte test does not have that flaw.
+    """
+
+    def test_long_full_depth_stream_is_not_misjudged(self):
+        records = [(i * 7919) & 0xFFFF for i in range(900000)]
+        full, distinct_ratio, _ = corpus.effective_depth(records)
+        self.assertTrue(full)
+        self.assertLess(distinct_ratio, 0.10)   # would fail the old test
+
+    def test_eight_bit_in_a_sixteen_bit_box_is_caught(self):
+        records = [(v << 8) for v in range(256)] * 500
+        full, _, zero_low = corpus.effective_depth(records)
+        self.assertFalse(full)
+        self.assertGreater(zero_low, 0.9)
+
+    def test_heavily_quantised_material_is_caught(self):
+        records = [(i % 40) * 3 + 1 for i in range(50000)]
+        self.assertFalse(corpus.effective_depth(records)[0])
+
+    def test_empty_stream_does_not_crash(self):
+        self.assertTrue(corpus.effective_depth([])[0])
+
+
+class TestWavLoading(unittest.TestCase):
+    def write_wav(self, path, frames, channels=1, rate=44100):
+        import struct as _struct
+        import wave as _wave
+        with _wave.open(path, "wb") as writer:
+            writer.setnchannels(channels)
+            writer.setsampwidth(2)
+            writer.setframerate(rate)
+            writer.writeframes(b"".join(_struct.pack("<h", v) for v in frames))
+
+    def test_stereo_is_reduced_to_the_left_channel(self):
+        import tempfile
+        import os as _os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _os.path.join(tmp, "s.wav")
+            frames = []
+            for i in range(5000):
+                frames += [i % 3000, -1]     # left ramps, right constant
+            self.write_wav(path, frames, channels=2)
+            item = corpus.load_wav(path)
+            self.assertIsNotNone(item)
+            self.assertEqual(len(item.records), 5000)
+            self.assertNotIn(0xFFFF, item.records[:10])
+            self.assertIn("left channel", item.note)
+
+    def test_offset_skips_leading_frames(self):
+        import tempfile
+        import os as _os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _os.path.join(tmp, "m.wav")
+            self.write_wav(path, list(range(9000)))
+            self.assertEqual(len(corpus.load_wav(path).records), 9000)
+            skipped = corpus.load_wav(path, offset=4000)
+            self.assertEqual(len(skipped.records), 5000)
+            self.assertEqual(skipped.records[0], 4000)
+
+    def test_limit_caps_length(self):
+        import tempfile
+        import os as _os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _os.path.join(tmp, "m.wav")
+            self.write_wav(path, list(range(9000)))
+            self.assertEqual(len(corpus.load_wav(path, limit=3000).records), 3000)
+
+    def test_too_short_is_declined(self):
+        import tempfile
+        import os as _os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _os.path.join(tmp, "tiny.wav")
+            self.write_wav(path, list(range(100)))
+            self.assertIsNone(corpus.load_wav(path))
+
+    def test_missing_file_is_declined(self):
+        self.assertIsNone(corpus.load_wav("/nonexistent/nope.wav"))

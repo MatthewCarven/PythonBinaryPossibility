@@ -3,6 +3,61 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-06 — Real music in the corpus; two conclusions revised
+
+Matthew dropped in a 3.5-minute vocal take (44.1 kHz stereo, decoded from a
+320 kbps MP3) — the full-depth real audio Phase 1 was missing. Genuinely
+16-bit: 41,061 distinct values, low byte zero 0.46% against 43% for the
+degenerate gallery files.
+
+**Two bugs it exposed immediately**
+- `load_wav` was mono-only and unbounded. Now takes the left channel of a
+  stereo file and caps at a 700k-sample excerpt, since the pure-Python coders
+  run at ~100k samples/sec and a whole song would take an hour.
+- The depth detector was wrong in a way only long real audio could reveal. It
+  tested distinct-values-per-*sample*, which falls as a stream lengthens
+  regardless of quality — 41,000 distinct across 9 million samples is 0.4%
+  and looks damning, but it is 63% of the entire 16-bit range. It would have
+  thrown out the one good file. Now tests the share of samples whose low byte
+  is zero (genuine 16-bit ~0.4%, upsampled 8-bit ~43%).
+
+**Results (three 16s excerpts)**
+                gzip   lzma   bz2   flac   rice  register  bittree
+  vocal-loud    1.20   1.38  1.48   2.19   1.89     1.87     1.90
+  vocal-quiet   1.69   2.21  2.41   3.08   2.57     2.60     2.60
+  vocal-mid     1.29   1.62  1.78   2.53   2.09     2.09     2.11
+
+**Two conclusions revised**
+- Predict-and-cancel beats gzip, lzma AND bz2 on real music by 20-55%. Across
+  the corpus that is now 4 of 6 full-depth real signals, up from 1. The
+  earlier "only wins on synthetic" worry is answered.
+- On real music the three describers *converge* — register 1.87 vs bittree
+  1.90, and a dead heat on the quiet excerpt. The per-node model's extra
+  context buys almost nothing on wide, noise-dominated residuals. So the
+  register gives up essentially nothing to a bit-tree here while using 16
+  parameters against 65,536, which strengthens the bounded-memory reading
+  rather than weakening it.
+
+**The remaining gap is not ours to close where I thought.** FLAC still wins
+by 15-18%, but since all three describers tie within 1%, the entire deficit
+is FLAC's *predictor* — adaptive LPC coefficients per block against our fixed
+orders 0-3. That is orthogonal to the possibility register and is now the
+highest-value item on the Phase 2 list.
+
+**Caveat Matthew already called** — lossy source, so the bottom eight bits
+measure entropy exactly 1.0000 (MP3 decoder rounding). Half of every sample
+is incompressible by anything, capping all the ratios above. He's recording a
+raw take next; relative standings should hold.
+
+**Aside worth keeping.** Measuring per-bit entropy across the whole 3.5
+minutes gives 15.995 bits of 16 — a ceiling of 1.00x. Every bit position looks
+like a fair coin globally. That is this project's own central finding
+(measure locally, predict first) demonstrated live on his own voice.
+
+Also fixed: `component_tradeoff` was re-running every coder, doubling the
+runtime of a long sweep for no new information. It now reuses the measured
+results. +9 tests (250 total).
+
 ## 2026-08-06 — Phase 1 benchmark run; the register's real job identified
 
 Matthew: "ideally this would sub in as a component of like a binary tree with

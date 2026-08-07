@@ -49,24 +49,40 @@ PREFERRED_AUDIO = [
     "drama.wav",      # wide dynamic range -- reduced depth
 ]
 
-#: Below this share of distinct sample values, treat audio as reduced-depth.
-FULL_DEPTH_DISTINCT_RATIO = 0.10
+#: Above this share of samples whose low byte is zero, treat audio as
+#: 8-bit-in-a-16-bit-box. Genuine 16-bit sits near 1/256 (0.4%); upsampled
+#: 8-bit sits near 43%. Two orders of magnitude apart, so the threshold is
+#: not delicate.
+MAX_ZERO_LOW_BYTE = 0.10
+
+#: And a floor on how much of the 16-bit value space actually gets used, to
+#: catch heavily quantised material that the low-byte test would miss.
+MIN_VALUE_SPACE_USED = 0.02
 
 
 def effective_depth(records: Sequence[int]) -> tuple:
     """(is_full_depth, distinct_ratio, share_of_samples_with_zero_low_byte).
 
-    Real 16-bit audio uses a large share of the value space and its low byte
-    is essentially uniform.  Audio upsampled from 8 bits has very few
-    distinct values and a low byte that is zero around 43% of the time --
-    which byte-oriented compressors exploit for free while sample-oriented
-    ones cannot, making any comparison between the two meaningless.
+    Real 16-bit audio spreads across the value space and its low byte is
+    essentially uniform.  Audio upsampled from 8 bits has very few distinct
+    values and a low byte that is zero around 43% of the time -- which
+    byte-oriented compressors exploit for free while sample-oriented ones
+    cannot, making any comparison between the two meaningless.
+
+    The test is on the low byte rather than on distinct-values-per-sample,
+    because that second ratio falls as a stream gets *longer* regardless of
+    its quality: a three-minute full-depth recording has 41,000 distinct
+    values across 9 million samples, which is 0.4% and looks damning until
+    you notice it is 63% of the entire 16-bit range.
     """
     if not records:
         return True, 0.0, 0.0
-    distinct_ratio = len(set(records)) / len(records)
+    distinct = len(set(records))
+    distinct_ratio = distinct / len(records)
     zero_low = sum(1 for r in records if (r & 0xFF) == 0) / len(records)
-    return distinct_ratio >= FULL_DEPTH_DISTINCT_RATIO, distinct_ratio, zero_low
+    space_used = distinct / 65536.0
+    full = zero_low <= MAX_ZERO_LOW_BYTE and space_used >= MIN_VALUE_SPACE_USED
+    return full, distinct_ratio, zero_low
 
 
 class Item:
@@ -115,31 +131,57 @@ class Item:
 
 # --- audio ---------------------------------------------------------------
 
-def load_wav(path: str, limit: Optional[int] = None) -> Optional[Item]:
-    """Load a 16-bit mono WAV as an Item. Returns None if unsuitable."""
+#: Pure-Python coders run at roughly 100k samples/second, so a whole song
+#: would take an hour. Excerpts of this length are plenty to measure with
+#: and keep a full sweep to minutes. Raise it if you have the patience.
+DEFAULT_SAMPLE_LIMIT = 700_000          # ~16 s at 44.1 kHz
+
+
+def load_wav(path: str, limit: Optional[int] = DEFAULT_SAMPLE_LIMIT,
+             offset: int = 0, label: Optional[str] = None) -> Optional[Item]:
+    """Load a 16-bit WAV as an Item. Returns None if unsuitable.
+
+    Stereo files are reduced to their left channel: the models here describe
+    one stream of samples, and comparing a mono model against FLAC's stereo
+    decorrelation would be measuring two different things at once.
+
+    ``offset`` skips that many frames first, which matters for real music --
+    the opening seconds are often silence and would flatter everything.
+    """
     try:
         with wave.open(path, "rb") as reader:
-            if reader.getsampwidth() != 2 or reader.getnchannels() != 1:
+            if reader.getsampwidth() != 2:
                 return None
+            channels = reader.getnchannels()
             frames = reader.getnframes()
             rate = reader.getframerate()
-            data = reader.readframes(frames if limit is None else min(frames, limit))
-    except (wave.Error, OSError):
+            start = min(offset, max(0, frames - 1))
+            reader.setpos(start)
+            wanted = frames - start if limit is None else min(frames - start, limit)
+            data = reader.readframes(wanted)
+    except (wave.Error, OSError, EOFError):
         return None
     count = len(data) // 2
-    records = list(struct.unpack(f"<{count}h", data[: count * 2]))
     if count < 2000:
+        return None
+    samples = struct.unpack(f"<{count}h", data[: count * 2])
+    records = list(samples[::channels]) if channels > 1 else list(samples)
+    if len(records) < 2000:
         return None
     unsigned = [r & 0xFFFF for r in records]
     full, ratio, zero_low = effective_depth(unsigned)
+    spread = len(set(unsigned)) / 65536.0
+    channel_note = ", left channel" if channels > 1 else ""
     note = (
-        f"real recorded audio, {ratio:.0%} distinct"
+        f"real recorded audio{channel_note}, uses {spread:.0%} of the "
+        f"16-bit range"
         if full
         else f"REDUCED DEPTH — 8-bit in a 16-bit box "
              f"({ratio:.1%} distinct, low byte zero {zero_low:.0%})"
     )
+    stem = label or os.path.splitext(os.path.basename(path))[0]
     return Item(
-        f"audio/{os.path.splitext(os.path.basename(path))[0]}",
+        f"audio/{stem}",
         "audio",
         unsigned,
         16,
