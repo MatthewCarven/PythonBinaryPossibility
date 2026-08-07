@@ -54,6 +54,36 @@ They are recorded in the plan as things to test, not as things established —
 Phase 1 exists precisely to settle them, and its kill criteria are written
 down in advance so a negative result can't be rationalised away later.
 
+**Follow-up same session: text and enumeration data types**
+Matthew asked to add text and "near perfect random data" to the compression
+corpus, specifically enumerating all 4-byte values (256^4 x 4 = 17,179,869,184
+bytes = 16 GiB) where no 4-byte block repeats until the space is exhausted.
+His arithmetic checked out exactly. Measured at reduced scale (the full 2-byte
+range, so the space really is exhausted rather than sampled):
+- text: columns 1.05x, prediction makes it *worse* at 0.92x, gzip 3.28x,
+  lzma 3.56x. Clean negative — text structure is symbol correlation, not
+  bit-position constancy.
+- enumeration in order: predict-and-cancel 27.91x vs gzip 1.10x. A 25x
+  advantage, and the strongest case for the approach found so far. No block
+  repeats so dictionaries have nothing to grip, but consecutive deltas are
+  constant so prediction annihilates it.
+- the same values shuffled: everything fails (0.84x-1.00x), correctly. The
+  information-theoretic floor for a permutation of all 32-bit values is
+  1.047x, so that is a theorem and not a limitation of effort.
+
+The ordered/shuffled pair is the most valuable thing in the corpus: identical
+multiset of bytes, identical histogram, no repeats in either, and they land at
+opposite extremes purely on order. Seeded, the same 16 GiB is ~50 bytes. Same
+data, three answers, decided entirely by what the decoder is assumed to know.
+
+Consequence for scope, now written into the plan: this is not a general-purpose
+compressor and should stop pretending to be. It suits numerically structured
+binary (counters, sensor rows, samples, fixed-format records) and is bad at
+symbolic data. gzip/lzma are the reverse. Division of labour, not defect.
+Losing on text is explicitly listed as NOT a kill criterion; "compressing"
+shuffled enumeration by more than 1.05x explicitly IS one, since that would
+mean a bug.
+
 **Handoff to meatthread0**
 - Read the two plans, push when happy. Nothing else outstanding.
 

@@ -62,6 +62,43 @@ Four wins of six, and the two losses are the informative ones. The quiet sine is
 see at all. White noise drifts below 1.0 because block headers cost real bits
 and there is nothing to buy with them — which is the theory holding, not a bug.
 
+### Text, and the enumeration cases (added 2026-08-06, same session)
+
+Two data classes added at Matthew's request: text, and "near perfect random
+data" in the sense of enumerating a huge range — all 4-byte values, 256⁴ × 4 =
+17,179,869,184 bytes (16 GiB), where **no 4-byte block repeats until the space
+is exhausted.**
+
+Tested at reduced scale (the full 2-byte range, every 16-bit value exactly once,
+so the range really is exhausted rather than sampled):
+
+| stream | columns | + predict & cancel | gzip | lzma |
+| --- | --- | --- | --- | --- |
+| text (markdown + Python) | 1.05× | 0.92× | **3.28×** | **3.56×** |
+| full range, **in order** | 2.68× | **27.91×** | 1.10× | 1.56× |
+| full range, **shuffled** | 0.89× | 0.84× | 1.00× | 1.00× |
+
+The ordered and shuffled rows contain the **identical multiset of values** —
+same bytes, same histogram, zero repeated blocks in either. Only the order
+differs, and they land at opposite extremes. That single pair is worth more than
+the rest of the corpus combined:
+
+- **In order:** predict-and-cancel reaches 27.91× while gzip manages 1.10×, a
+  25× advantage. Because no block repeats, dictionary matching has nothing to
+  grip — but the delta between consecutive records is a constant, so prediction
+  annihilates it. This is the strongest case found for the approach so far.
+- **Shuffled:** everything fails, correctly. And the information-theoretic floor
+  confirms it is not a failure of imagination: a permutation of all 32-bit
+  values contains ~131.2 billion bits of the 137.4 billion it is stored in, so
+  **the best any compressor could ever do is 1.047×** — 4.5% — and only by
+  modelling "these values never repeat". Meanwhile a *seeded* shuffle of the
+  same 16 GiB is about 50 bytes. Same data, three answers, depending entirely on
+  what the decoder is assumed to know.
+- **Text:** the column model does essentially nothing (1.05×) and prediction
+  makes it *worse* (0.92×), while gzip and lzma get 3.3–3.6×. Text structure
+  lives in symbol correlation and context, not in bit-position constancy. This
+  is a clean, useful negative and should be treated as scope, not failure.
+
 ### What this means
 
 The column model sees exactly one kind of structure: positional constancy inside
@@ -70,6 +107,16 @@ prediction. Alignment and cancellation supply the prediction, and only then does
 the possibility register have something worth describing. **Predict, cancel,
 describe what's left** — which is the architecture of every real codec, arrived
 at from the other direction.
+
+The text and enumeration results sharpen this into a scope statement. This is
+not a general-purpose compressor and should stop pretending to be one. It is
+good at **numerically structured binary streams** — counters, sensor rows,
+sample sequences, fixed-format records — where the value at position *i* is
+predictable from its neighbours and the residual is small. It is bad at
+**symbolic data** — text, and anything whose structure is correlation between
+symbols rather than arithmetic between values. gzip and lzma are the reverse.
+That is a real division of labour, not a defect, and naming it is more useful
+than chasing a win on everything.
 
 ### What has NOT been shown
 
@@ -92,10 +139,46 @@ Enough caveats that Phase 1 exists to settle them:
 real data and real baselines. Cheap to run, and a negative result is worth as
 much as a positive one.
 
-- [ ] Assemble a real corpus: music, speech, near-silence, a dense/loud track,
-      plus non-audio record streams (logs, packet captures, sensor rows).
-      Note licences for anything committed; prefer generating or linking over
-      committing large binaries
+### The corpus
+
+Six classes, chosen so that each one is expected to *decide* something. Where a
+prediction is stated, the point is to be checked, not assumed.
+
+**Audio** — music, speech, near-silence, and a dense/loud track. The original
+motivating case; predict-and-cancel should do well, and FLAC is the yardstick.
+
+**Fixed-format records** — logs, packet captures, sensor rows. Constant headers
+plus a counter plus a few varying fields. Measured 4.71× blocked against gzip's
+4.98× at reduced scale; the question is whether prediction closes that gap.
+
+**Text** — prose, markdown, source code. **Expected to lose, badly**, and it
+is in the corpus precisely to keep that honest and visible. If a later change
+ever makes text look good, suspect the benchmark before celebrating.
+
+**Ordered enumeration** — the 4-byte range in sequence, 16 GiB, no repeated
+block until exhaustion. Expected to be the model's best case by a wide margin
+(27.91× vs gzip's 1.10× at reduced scale). Also the case that most clearly
+separates prediction from dictionary matching, which is the whole thesis.
+
+**Shuffled enumeration** — the same 16 GiB of values, order destroyed. Expected
+to be incompressible by everything, with a hard ceiling of 1.047×. This is the
+**control**: a codec that "compresses" this is broken, and one that expands it
+badly is poorly engineered. Both failure modes are worth catching.
+
+**Seeded shuffled enumeration** — byte-identical to the above, but generated
+from a known seed. Not a compression test; a *framing* test. The same 16 GiB is
+~50 bytes if the decoder knows the generator and ~16 GiB if it does not, which
+is the clearest possible statement of where compression actually lives.
+
+- [ ] Build the corpus. Note licences for anything committed; prefer generating
+      or linking over committing large binaries
+- [ ] **Stream the enumeration cases — never materialise 16 GiB.** Generate
+      records on the fly, feed them through the coder, keep only the counters.
+      Provide reduced-scale variants (the full 2-byte range is 128 KB and
+      exhibits the same behaviour) so the suite stays runnable in seconds, with
+      the full-scale run as an opt-in
+- [ ] Verify the reduced-scale results actually predict the full-scale ones on
+      at least one case, rather than assuming the scaling holds
 - [ ] Baselines: `gzip`, `lzma`, and **FLAC** — the one that actually matters
       for audio and the one most likely to be humbling
 - [ ] Re-run the three models (whole-stream, blocked, predict-and-cancel) on
@@ -120,9 +203,21 @@ later:
 - If it wins **narrowly but never beats plain Rice-coded residuals**, then the
   possibility register is decoration on a conventional codec. Interesting, not
   load-bearing. Stop.
+- If it **"compresses" shuffled enumeration by more than ~1.05×**, there is a
+  bug. That row is a control and the ceiling is a theorem, not an opinion.
+
+Explicitly **not** kill criteria, so they don't get mistaken for failure later:
+
+- Losing on text. That is expected, it is in the corpus to stay visible, and it
+  is a scope boundary rather than a defect.
+- Expanding incompressible input slightly. Every real codec does; it should be
+  *bounded* and cheap, not zero. Worth measuring the worst-case expansion and
+  adding a stored-raw fallback if it is ugly.
 
 Anything else — a real, repeatable win on some class of data — earns Phase 2,
-and the benchmark tells you exactly which class to aim at.
+and the benchmark tells you exactly which class to aim at. On current evidence
+that class is numerically structured binary, and ordered enumeration is where
+to point it first.
 
 ## Phase 2 — Only if Phase 1 earns it
 
@@ -165,3 +260,9 @@ ratio that is entirely real and entirely dependent on both ends already holding
 the synthesiser.
 
 That is not a loophole. It is what compression *is*.
+
+And the sharpest illustration of it in the whole plan costs nothing to
+reproduce: take the 16 GiB of 4-byte values, in order, shuffled, and shuffled
+from a known seed. The bytes are identical in all three. They compress to
+roughly 1/28th, to nothing at all, and to about fifty bytes — determined not by
+the data but by what the decoder already knows.
