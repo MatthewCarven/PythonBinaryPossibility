@@ -3,6 +3,60 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-06 — Could this drive compression? Measured, then split into two plans
+
+Matthew asked whether the possibility model could drive a compression
+algorithm, then refined it over several messages: record variation that
+actually appears in the stream rather than assumed randomness; seeds and the
+"order of likely candidates"; and finally data alignment and cancellation.
+No code shipped — this session ended in two design docs, by request.
+
+**Experiments run (throwaway scripts, not committed — results preserved in
+PLAN-compression.md)**
+- Marking bit columns `?` where they vary across a whole stream: 1.00x on
+  audio (every one of 16 columns varied at least once across 103k samples),
+  2.13x on fixed-format records vs gzip's 4.98x. Strict constancy is far too
+  brittle — one exception kills a whole column.
+- Measuring variation *locally* (one register per block): audio 1.74x, beating
+  gzip's 1.60x. Grading columns by entropy instead only reached 1.05x, so
+  locality mattered much more than gradation. That was the surprise.
+- Adding prediction and cancellation before the register (predict each sample
+  from neighbours, describe only the residual): won 4 of 6 signals, up to
+  5.74x vs gzip's 2.01x on a speech-like envelope. The two losses were
+  informative — a literally periodic sine (back-references eat it, columns
+  can't see it) and white noise (drifts to 0.89x because block headers cost
+  bits and there's nothing to buy).
+- The PRNG demonstration: 120,000 bytes that gzip *and* lzma both expanded,
+  reproduced exactly from a 67-byte generator line. 1,791x, round-trip
+  verified. Matthew's point about randomness and description length,
+  demonstrated by accident inside my own control.
+
+**Findings worth keeping**
+- The column model sees exactly one kind of structure: positional constancy
+  inside a window. Blind to repetition, correlation, and prediction.
+- A register costs log2(3) = 1.585 bits per position, so a possibility space
+  is 58.5% *larger* than the bitstring it describes. Wins never come from the
+  `?`s; they come from an agreed model, and the bits move into that model.
+- Correlated probabilities and the deferred "entanglement" idea are the same
+  feature. Flagged in TODO.md so it doesn't get built twice.
+
+**Decisions made with Matthew**
+- Probability model: per-bit, independent. Correlation explicitly out of scope.
+- Randomness scope: all three of measuring real streams, demonstrating the
+  hard limits, and controlled generation — captured as checklists in-section.
+- Compression: an honest benchmark *first*, against FLAC and on real data,
+  with kill criteria agreed in advance. No codec until it earns one.
+
+**Deviation worth noting**
+The exploratory numbers above are from synthetic signals against a weak
+baseline (gzip is not the right yardstick for audio; FLAC was never run).
+They are recorded in the plan as things to test, not as things established —
+Phase 1 exists precisely to settle them, and its kill criteria are written
+down in advance so a negative result can't be rationalised away later.
+
+**Handoff to meatthread0**
+- Read the two plans, push when happy. Nothing else outstanding.
+
 ## 2026-08-06 — The bench and the psynthrack (Claude)
 
 Matthew: "dreaming of a gui for experimentation and possibly a psynthrack

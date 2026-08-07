@@ -3,15 +3,32 @@
 Surfaced tasks and future ideas. Tick things off or strike them out; add
 freely.
 
+## Planned threads
+
+Two pieces of work large enough to have their own design docs. Detailed
+checklists live in the plans; only the headline sits here.
+
+- [ ] **[PLAN-probability.md](PLAN-probability.md)** — per-bit probability,
+      entropy as the generalised possibility count, likelihood-ordered
+      enumeration, measuring real streams, weighted collapse, and runnable
+      demos of the hard limits. **Do this first**; the compression work
+      depends on it.
+- [ ] **[PLAN-compression.md](PLAN-compression.md)** — Phase 1 is an honest
+      benchmark against gzip/lzma/**FLAC** on real data, with kill criteria
+      agreed in advance. The codec only gets built if the benchmark earns it.
+      Today's exploratory numbers are recorded there as the starting point.
+
 ## Next up
 
 - [ ] **Push the latest commit** (meatthread0 — Claude doesn't push).
 - [ ] **Linked bits ("entanglement")**: constrain two bits to collapse
       together (equal or opposite), shrinking the possibility space the way
-      the quantum framing suggests. Deferred from 2026-08-06 session — good
-      candidate for its own session. Now has an obvious musical payoff too:
-      entangled steps across tracks (kick and bass always agreeing, hat
-      always opposing) would make collapses that stay coherent.
+      the quantum framing suggests. Musical payoff too: entangled steps across
+      tracks (kick and bass always agreeing, hat always opposing) would make
+      collapses that stay coherent.
+      **Note:** this is the *same feature* as correlated probabilities, which
+      PLAN-probability.md deliberately leaves out of scope. Don't build it
+      twice — when it lands, it lands as one layer serving both.
 
 ## Psynthrack & bench (added 2026-08-06)
 
@@ -31,6 +48,8 @@ freely.
       format already).
 - [ ] Bench: undo, and a "collapse in place" button that commits the dice roll
       back into the grid.
+- [ ] Weighted steps in the rack once PLAN-probability.md lands — a step that
+      fires 20% of the time is a better musical dial than on/off/maybe.
 
 ## Ideas, unscheduled
 
@@ -39,8 +58,6 @@ freely.
 - [ ] Tree export formats: Mermaid / Graphviz output alongside ASCII, so
       trees can go in docs.
 - [ ] GitHub Action running `python -m unittest` on push.
-- [ ] Weighted possibilities: per-bit probability instead of a flat 50/50,
-      possibility counts become likelihoods.
 - [ ] Glitch demo on a small image file (BinaryConverter already does the
       file I/O; would make a great README visual).
 - [ ] Refresh the README screenshot — the current one predates the tree and
