@@ -14,14 +14,21 @@ checklists live in the plans; only the headline sits here.
       demos of the hard limits.~~ **Done 2026-08-06.** Shipped
       `BinaryEntropy.py`, `randomness_demo.py`, weighted steps in the rack
       and odds controls in the bench. The compression thread is unblocked.
-- [ ] **[PLAN-compression.md](PLAN-compression.md)** — Phase 1 is an honest
-      benchmark against gzip/lzma/**FLAC** on real data, with kill criteria
-      agreed in advance. The codec only gets built if the benchmark earns it.
-      Today's exploratory numbers are recorded there as the starting point.
+- [~] **[PLAN-compression.md](PLAN-compression.md)** — **Phase 1 done
+      2026-08-06**, no kill criteria triggered. `benchmarks/` reproduces it.
+      Finding: the register is a bounded-memory approximation of an LZMA
+      bit-tree — 99.7% of its ratio on 0.05% of its state for structured
+      data, and buildable at 32-bit widths where a bit-tree cannot exist.
+      **Phase 2 (the codec) is earned but not started**, and should aim at
+      wide-symbol structured binary, not audio.
 
 ## Next up
 
 - [ ] **Push the latest commit** (meatthread0 — Claude doesn't push).
+- [ ] **Re-run the benchmark against real music** — `python -m benchmarks.runner
+      yourfile.wav`. The system audio gallery turned out to be 8-bit sound in a
+      16-bit container, so the audio conclusions are provisional until this
+      happens. Everything else in Phase 1 stands.
 - [ ] **Linked bits ("entanglement")**: constrain two bits to collapse
       together (equal or opposite), shrinking the possibility space the way
       the quantum framing suggests. Musical payoff too: entangled steps across

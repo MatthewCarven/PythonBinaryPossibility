@@ -1,0 +1,139 @@
+# Phase 1 benchmark output, 2026-08-06, verbatim.
+# Reproduce with: python -m benchmarks.runner --enum-bits 14
+
+
+==============================================================================
+ PHASE 1 BENCHMARK — does the possibility register earn its place?
+==============================================================================
+
+ Three ways to describe the same residual:
+   predict+rice     no probabilities, geometric assumption   (FLAC)
+   predict+register one probability per bit POSITION         (OURS)
+   predict+bittree  one probability per tree NODE            (LZMA)
+
+ Baselines are ACTUAL bytes, containers included.
+ Models are analytic code lengths and pay no container cost,
+ so they are flattered by a few hundred bytes of framing.
+
+  measuring audio/applause (45,214 x 16b) …
+  measuring audio/curve (67,308 x 16b) …
+  measuring audio/roll (121,302 x 16b) …
+  measuring audio/gong (95,624 x 16b) …
+  measuring audio/nature1 (41,529 x 16b) …
+  measuring audio/kongas (27,411 x 16b) …
+  measuring audio/romans (45,211 x 16b) …
+  measuring audio/drama (81,161 x 16b) …
+  measuring signal/ecg (108,000 x 16b) …
+  measuring records/packets (20,000 x 32b) …
+  measuring records/sensor (20,000 x 16b) …
+  measuring text/prose (52,278 x 8b) …
+  measuring text/source (91,006 x 8b) …
+  measuring enum/ordered (16,384 x 14b) …
+  measuring enum/shuffled (16,384 x 14b) …
+  measuring enum/seeded (16,384 x 14b) …
+
+
+### AUDIO
+                           gzip -9          lzma -9           bz2 -9          flac -8    columns/whole  columns/blocked     predict+rice predict+registerpredict+reg-static  predict+bittree
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+audio/applause              1.06x            1.09x*           1.05x            1.09x            1.00x            0.95x            1.09x            1.05x            0.77x            1.09x 
+audio/curve                 1.37x            1.60x*           1.42x            1.29x            1.01x            1.07x            1.27x            1.35x            0.97x            1.58x 
+audio/roll                  1.07x            1.11x            1.18x            1.46x*           1.00x            1.05x            1.40x            1.35x            0.99x            1.40x 
+audio/gong  !               1.60x            1.85x            2.06x*           1.12x            1.06x            1.01x            1.07x            1.04x            0.76x            1.11x 
+audio/nature1  !            1.78x            2.03x            2.16x*           1.11x            1.07x            1.00x            1.14x            1.11x            0.81x            1.20x 
+audio/kongas  !             1.78x            2.06x            2.30x*           1.15x            1.07x            1.08x            1.32x            1.32x            0.96x            1.51x 
+audio/romans  !             1.74x            1.97x            2.00x*           1.03x            1.07x            1.01x            1.07x            1.05x            0.77x            1.14x 
+audio/drama  !              1.65x            1.95x            2.14x*           1.19x            1.06x            1.10x            1.17x            1.15x            0.84x            1.24x 
+signal/ecg                  1.79x            2.21x            2.69x*           2.14x            1.19x            1.55x            1.70x            1.71x            1.24x            1.89x 
+
+### RECORDS
+                            gzip -9          lzma -9           bz2 -9          flac -8    columns/whole  columns/blocked     predict+rice predict+registerpredict+reg-static  predict+bittree
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+records/packets              4.98x            8.59x*           6.53x                 —           2.31x            5.15x            6.08x            6.07x            4.38x            6.14x 
+records/sensor               1.33x            1.80x            1.72x                 —           1.16x            1.67x            2.10x            2.09x            1.55x            2.15x*
+
+### TEXT
+                        gzip -9          lzma -9           bz2 -9          flac -8    columns/whole  columns/blocked     predict+rice predict+registerpredict+reg-static  predict+bittree
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+text/prose               2.56x            2.76x            2.91x*                —           1.36x            1.28x            0.98x            1.12x            0.80x            1.08x 
+text/source              3.68x            3.99x            4.15x*                —           1.36x            1.34x            1.04x            1.17x            0.83x            1.15x 
+
+### ENUM
+                          gzip -9          lzma -9           bz2 -9          flac -8    columns/whole  columns/blocked     predict+rice predict+registerpredict+reg-static  predict+bittree
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+enum/ordered               0.96x            1.37x            5.37x                 —           1.00x            2.60x            7.67x           18.36x           13.85x           18.41x*
+enum/shuffled              0.92x            0.95x            0.99x                 —           1.00x*           0.95x            0.92x            0.91x            0.67x            0.94x 
+enum/seeded                0.92x            0.95x            0.99x                 —           1.00x*           0.95x            0.92x            0.91x            0.67x            0.94x 
+
+  ! 5 audio item(s) are 8-bit inside a 16-bit container. Byte-oriented compressors
+    exploit that for free while sample-oriented models cannot,
+    so these rows are shown but EXCLUDED from the verdict:
+      audio/gong           REDUCED DEPTH — 8-bit in a 16-bit box (1.2% distinct, low byte zero 43%)
+      audio/nature1        REDUCED DEPTH — 8-bit in a 16-bit box (2.0% distinct, low byte zero 44%)
+      audio/kongas         REDUCED DEPTH — 8-bit in a 16-bit box (3.8% distinct, low byte zero 44%)
+      audio/romans         REDUCED DEPTH — 8-bit in a 16-bit box (1.4% distinct, low byte zero 44%)
+      audio/drama          REDUCED DEPTH — 8-bit in a 16-bit box (1.4% distinct, low byte zero 43%)
+
+  Corpus notes:
+    audio/applause       real recorded audio, 39% distinct
+    audio/curve          real recorded audio, 27% distinct
+    audio/roll           real recorded audio, 19% distinct
+    signal/ecg           real recorded ECG, 360 Hz, 1.0% distinct (optional item)
+    records/packets      constant header + counter + small field (synthetic)
+    records/sensor       slowly drifting sensor readings (synthetic)
+    text/prose           real text -- expected to LOSE, kept visible on purpose
+    text/source          real text -- expected to LOSE, kept visible on purpose
+    enum/ordered         2^14 values in order; no block repeats, constant deltas
+    enum/shuffled        2^14 values shuffled -- CONTROL, ceiling is ~1.05x
+    enum/seeded          byte-identical to shuffled; ~50 bytes if you know the seed
+
+  (51.5s)
+
+==============================================================================
+ COMPONENT TRADE-OFF — describing a W-bit residual
+==============================================================================
+
+   rice      1 parameter    | register  W parameters | bit-tree  2**W nodes
+
+  item                     rice   register   bit-tree  reg state      tree state
+  ----------------------------------------------------------------------------
+  audio/applause          1.09x      1.05x      1.09x         17         131,072
+  audio/curve             1.27x      1.35x      1.58x         15          32,768
+  audio/roll              1.40x      1.35x      1.40x         16          65,536
+  signal/ecg              1.70x      1.71x      1.89x         13           8,192
+  records/packets         6.08x      6.07x      6.14x         32     unbuildable
+  records/sensor          2.10x      2.09x      2.15x         14          16,384
+  enum/ordered            7.67x     18.36x     18.41x         15          32,768
+  enum/shuffled           0.92x      0.91x      0.94x         15          32,768
+
+  The register is a BOUNDED-MEMORY approximation of the bit-tree:
+  same binary tree, but odds per depth instead of per path. It
+  gives up accuracy where the value genuinely depends on the route
+  taken (analog signals) and gives up almost nothing where the
+  structure is positional (counters, enumeration, telemetry) --
+  while staying buildable at widths where a bit-tree cannot exist.
+
+==============================================================================
+ KILL CRITERIA — agreed in PLAN-compression.md before running
+==============================================================================
+
+  Component question: the register (one probability per bit
+  POSITION) vs the bit-tree (one per tree NODE, LZMA's model).
+  Register matches or beats bit-tree on 0/9 items.
+
+  [ not met ] loses to FLAC everywhere by a wide margin
+              beats or matches FLAC on 1/4 full-depth audio items
+  [ not met ] only ever wins on synthetic or sparse signals
+              beats every general-purpose baseline on 1/4 full-depth real signals
+  [ not met ] never beats plain Rice-coded residuals
+              beats Rice on 2/6 signal+record items
+  [ not met ] 'compresses' shuffled enumeration past ~1.05x
+              best any coder managed on the control: 1.000x
+
+  Explicitly NOT kill criteria:
+    - losing on text -- expected, in the corpus to stay visible
+    - slight expansion of incompressible input -- every codec does this
+
+  VERDICT: no kill criteria triggered. Phase 2 is earned,
+  and the tables above say which data class to aim it at.
+

@@ -3,6 +3,53 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-06 — Phase 1 benchmark run; the register's real job identified
+
+Matthew: "ideally this would sub in as a component of like a binary tree with
+its own simple code like lzma... (like a word on the tree)". That framing is
+what made the benchmark worth running, because it names the correct
+comparison. A "word on the tree" is LZMA's **bit-tree** — a symbol encoded as
+a path down a binary tree, one context-modelled bit per level — which is
+exactly what a weighted BinaryRegister is. So the question was never "do we
+beat lzma", it was "do we beat the component we would replace".
+
+**Built** `benchmarks/` (corpus.py, coders.py, runner.py, README.md) plus 28
+tests. Three describers behind one predict-and-cancel front end: rice (FLAC's,
+no probabilities), register (ours, one probability per bit POSITION), bittree
+(LZMA's, one per tree NODE).
+
+**Result.** On ratio the register loses to the bit-tree 9/9 — expected, since
+conditioning on the path is strictly more information than conditioning on
+depth. But model state reverses the reading: on enum/ordered it reaches 99.7%
+of the bit-tree's ratio (18.36x vs 18.41x) using 15 parameters against 32,768,
+and beats Rice by 2.4x. On 32-bit records a bit-tree needs ~4.3 billion
+contexts and is simply unbuildable, while the register needs 32 numbers and
+lands within 1%. On analog signals it gives up 10-15%.
+
+So the register is a **bounded-memory approximation of a bit-tree** — nearly
+free where structure is positional, honestly worse where it isn't, and
+buildable at widths where the alternative cannot exist. Phase 2 earned, aimed
+narrowly at wide-symbol structured binary. Not audio, not general purpose.
+
+**The corpus mistake worth recording.** First run showed bz2 beating FLAC 2:1
+on "real audio", which does not happen. Investigated rather than reported:
+most of the LibreOffice sound gallery is 8-bit audio inside a 16-bit container
+(gong.wav has 1,162 distinct values of 65,536; low byte zero 43% of the time).
+Byte-oriented compressors get that for free; sample-oriented ones cannot.
+Added automatic depth detection — such items are now marked `!`, kept in the
+table, and excluded from the verdict. That left only four genuinely
+full-depth real signals, so audio conclusions are flagged provisional. Also
+added a real recorded ECG (optional, via scipy) as full-depth signal data.
+
+**Kill criteria: none triggered.** The control held — nothing compressed
+shuffled enumeration past 1.000x.
+
+**Testing note.** One benchmark test initially failed because it used a
+counter to exercise model state; prediction cancels a counter to two-bit
+residuals, so the exponential gap never appeared. That was the mechanism
+working, not the test failing — rewritten to use wide residuals, with the
+counter kept as a separate assertion that prediction shrinks state.
+
 ## 2026-08-06 — Thread A built: probability, entropy, and the limits (Claude)
 
 Executed PLAN-probability.md end to end. 121 -> 213 tests, all green, and the

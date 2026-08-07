@@ -1,9 +1,61 @@
 # Plan — Compression
 
-Status: **planned, not started. Phase 1 is a benchmark, not a codec.**
-Written 2026-08-06.
-Depends on: [PLAN-probability.md](PLAN-probability.md) — specifically
-likelihood-ordered enumeration, without which there is nothing to rank.
+Status: **PHASE 1 RUN 2026-08-06. No kill criteria triggered; Phase 2 earned.**
+Results and the harness are in [`benchmarks/`](benchmarks/README.md);
+`python -m benchmarks.runner` reproduces everything below.
+Depends on: [PLAN-probability.md](PLAN-probability.md) — **built**.
+
+## Phase 1 verdict, up front
+
+The register was compared against the two components it would actually
+displace, all three sitting behind the same predict-and-cancel front end:
+Rice (FLAC's model, no probabilities), the register (one probability per bit
+**position**), and a bit-tree (LZMA's model, one probability per tree
+**node**). That framing came from Matthew — *"sub in as a component… like a
+word on the tree"* — and it is the right one, because a bit-tree is exactly
+what a weighted register is competing with.
+
+**On ratio alone the register loses to the bit-tree on 9 of 9 items**, which
+is unsurprising: conditioning on the path taken is strictly more information
+than conditioning on the depth. Ratio alone would end it there.
+
+Model *state* changes the conclusion:
+
+| item | rice | register | bit-tree | reg state | tree state |
+| --- | --- | --- | --- | --- | --- |
+| audio/applause | 1.09× | 1.05× | 1.09× | 17 | 131,072 |
+| audio/curve | 1.27× | 1.35× | 1.58× | 15 | 32,768 |
+| audio/roll | 1.40× | 1.35× | 1.40× | 16 | 65,536 |
+| signal/ecg | 1.70× | 1.71× | 1.89× | 13 | 8,192 |
+| records/packets | 6.08× | 6.07× | 6.14× | 32 | **unbuildable** |
+| records/sensor | 2.10× | 2.09× | 2.15× | 14 | 16,384 |
+| **enum/ordered** | 7.67× | **18.36×** | 18.41× | 15 | 32,768 |
+| enum/shuffled | 0.92× | 0.91× | 0.94× | 15 | 32,768 |
+
+The register is a **bounded-memory approximation of a bit-tree**. Same binary
+tree; odds per depth instead of per path. On ordered enumeration it reaches
+99.7% of the bit-tree's ratio on 0.05% of its state, and beats Rice by 2.4×.
+On 32-bit records the bit-tree would need ~4.3 billion contexts and cannot be
+built at all, while the register needs 32 numbers and lands within 1%. On
+analog signals it gives up 10–15%, because there the value genuinely does
+depend on the path — the one thing a per-position model cannot express.
+
+Against Rice it is a wash everywhere *except* structured, counter-like data,
+where it is dramatically better for the same order of cost.
+
+So Phase 2 is earned, but aimed narrowly: **numerically structured binary at
+wide symbol sizes**, where a bit-tree is unaffordable and Rice is too blunt.
+Not audio, and not as a general-purpose compressor.
+
+### Corpus limitation, stated plainly
+
+Most of the system's audio gallery is 8-bit sound inside a 16-bit container —
+`gong.wav` holds 1,162 distinct values out of 65,536, low byte zero 43% of the
+time. Byte-oriented compressors exploit that for free while sample-oriented
+ones cannot, which made bz2 appear to beat FLAC 2:1 on the first run. Those
+items are now detected, marked, and excluded from the verdict, leaving only
+four genuinely full-depth real signals. **The audio conclusions are therefore
+provisional** and want re-running against real music.
 
 ## Context — the question, and what was already measured
 
@@ -170,24 +222,24 @@ from a known seed. Not a compression test; a *framing* test. The same 16 GiB is
 ~50 bytes if the decoder knows the generator and ~16 GiB if it does not, which
 is the clearest possible statement of where compression actually lives.
 
-- [ ] Build the corpus. Note licences for anything committed; prefer generating
+- [x] Build the corpus. Note licences for anything committed; prefer generating
       or linking over committing large binaries
-- [ ] **Stream the enumeration cases — never materialise 16 GiB.** Generate
+- [x] **Stream the enumeration cases — never materialise 16 GiB.** Generate
       records on the fly, feed them through the coder, keep only the counters.
       Provide reduced-scale variants (the full 2-byte range is 128 KB and
       exhibits the same behaviour) so the suite stays runnable in seconds, with
       the full-scale run as an opt-in
 - [ ] Verify the reduced-scale results actually predict the full-scale ones on
       at least one case, rather than assuming the scaling holds
-- [ ] Baselines: `gzip`, `lzma`, and **FLAC** — the one that actually matters
+- [x] Baselines: `gzip`, `lzma`, `bz2` and **FLAC** — the one that actually matters
       for audio and the one most likely to be humbling
-- [ ] Re-run the three models (whole-stream, blocked, predict-and-cancel) on
+- [x] Re-run the three models (whole-stream, blocked, predict-and-cancel) on
       real inputs, sweeping block size and predictor order
-- [ ] Add a Rice/Golomb-coded residual variant, since that is roughly what FLAC
+- [x] Add a Rice/Golomb-coded residual variant, since that is roughly what FLAC
       does and the gap between it and the register model is the real question
-- [ ] Report honestly: a table per corpus item, and an explicit statement of
+- [x] Report honestly: a table per corpus item, and an explicit statement of
       where the model loses and why
-- [ ] Land it as `benchmarks/` with a runner, so results are reproducible rather
+- [x] Land it as `benchmarks/` with a runner, so results are reproducible rather
       than remembered
 
 ### Kill criteria — decide these now, not after
