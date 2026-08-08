@@ -55,12 +55,37 @@ PREFERRED_AUDIO = [
 #: not delicate.
 MAX_ZERO_LOW_BYTE = 0.10
 
-#: And a floor on how much of the 16-bit value space actually gets used, to
-#: catch heavily quantised material that the low-byte test would miss.
-MIN_VALUE_SPACE_USED = 0.02
+#: There is deliberately no "uses enough of the value space" test. A quiet
+#: passage of genuine music legitimately visits few distinct values -- the
+#: mid excerpt of Matthew's take touches 131 of 65,536 -- and flagging that
+#: as degenerate is a false positive. Small values are not dead bits, and
+#: prediction handles them fine.
 
 
-def effective_depth(records: Sequence[int]) -> tuple:
+def wasted_low_bits(records: Sequence[int], width: int) -> int:
+    """How many low bit positions are zero in every record.
+
+    Audio mixed at one depth and exported at a wider one carries dead bits
+    at the bottom -- a 16-bit master saved as 32-bit PCM is half padding.
+    FLAC strips these for free via its ``wasted_bits_per_sample`` field, so
+    any honest comparison has to notice them too.
+    """
+    if not records:
+        return 0
+    combined = 0
+    for record in records:
+        combined |= record
+        if combined & 1:
+            return 0
+    if combined == 0:
+        return width
+    count = 0
+    while count < width and not (combined >> count) & 1:
+        count += 1
+    return count
+
+
+def effective_depth(records: Sequence[int], width: int = 16) -> tuple:
     """(is_full_depth, distinct_ratio, share_of_samples_with_zero_low_byte).
 
     Real 16-bit audio spreads across the value space and its low byte is
@@ -74,14 +99,18 @@ def effective_depth(records: Sequence[int]) -> tuple:
     its quality: a three-minute full-depth recording has 41,000 distinct
     values across 9 million samples, which is 0.4% and looks damning until
     you notice it is 63% of the entire 16-bit range.
+
+    What is being detected is precisely **dead bits** -- positions that
+    carry no information at all -- because those are what hand a
+    byte-oriented compressor a win a sample-oriented model cannot match.
+    Few distinct values is a different property, exploitable by both, and
+    is deliberately not penalised here (see the note above).
     """
     if not records:
         return True, 0.0, 0.0
-    distinct = len(set(records))
-    distinct_ratio = distinct / len(records)
+    distinct_ratio = len(set(records)) / len(records)
     zero_low = sum(1 for r in records if (r & 0xFF) == 0) / len(records)
-    space_used = distinct / 65536.0
-    full = zero_low <= MAX_ZERO_LOW_BYTE and space_used >= MIN_VALUE_SPACE_USED
+    full = zero_low <= MAX_ZERO_LOW_BYTE and not wasted_low_bits(records, width)
     return full, distinct_ratio, zero_low
 
 
@@ -150,7 +179,8 @@ def load_wav(path: str, limit: Optional[int] = DEFAULT_SAMPLE_LIMIT,
     """
     try:
         with wave.open(path, "rb") as reader:
-            if reader.getsampwidth() != 2:
+            sample_width = reader.getsampwidth()
+            if sample_width not in (2, 4):
                 return None
             channels = reader.getnchannels()
             frames = reader.getnframes()
@@ -161,30 +191,41 @@ def load_wav(path: str, limit: Optional[int] = DEFAULT_SAMPLE_LIMIT,
             data = reader.readframes(wanted)
     except (wave.Error, OSError, EOFError):
         return None
-    count = len(data) // 2
+    code, width = ("h", 16) if sample_width == 2 else ("i", 32)
+    count = len(data) // sample_width
     if count < 2000:
         return None
-    samples = struct.unpack(f"<{count}h", data[: count * 2])
+    samples = struct.unpack(f"<{count}{code}", data[: count * sample_width])
     records = list(samples[::channels]) if channels > 1 else list(samples)
     if len(records) < 2000:
         return None
-    unsigned = [r & 0xFFFF for r in records]
-    full, ratio, zero_low = effective_depth(unsigned)
-    spread = len(set(unsigned)) / 65536.0
+
+    mask = (1 << width) - 1
+    unsigned = [r & mask for r in records]
+    wasted = wasted_low_bits(unsigned, width)
+    full, ratio, zero_low = effective_depth(unsigned, width)
+    spread = len(set(unsigned)) / float(1 << width)
     channel_note = ", left channel" if channels > 1 else ""
-    note = (
-        f"real recorded audio{channel_note}, uses {spread:.0%} of the "
-        f"16-bit range"
-        if full
-        else f"REDUCED DEPTH — 8-bit in a 16-bit box "
-             f"({ratio:.1%} distinct, low byte zero {zero_low:.0%})"
-    )
+
+    if wasted:
+        note = (
+            f"{width}-bit container holding {width - wasted}-bit audio"
+            f"{channel_note} — {wasted} WASTED low bits, always zero. FLAC "
+            f"strips these for free; a model has to notice them."
+        )
+    elif full:
+        note = (f"real recorded audio{channel_note}, uses {spread:.0%} of the "
+                f"{width}-bit range")
+    else:
+        note = (f"REDUCED DEPTH — 8-bit in a {width}-bit box "
+                f"({ratio:.1%} distinct, low byte zero {zero_low:.0%})")
+
     stem = label or os.path.splitext(os.path.basename(path))[0]
     return Item(
         f"audio/{stem}",
         "audio",
         unsigned,
-        16,
+        width,
         note=note,
         wav_path=path,
         sample_rate=rate,

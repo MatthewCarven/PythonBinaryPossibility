@@ -90,6 +90,55 @@ incompressible by anything, which caps every ratio in that table. A raw
 recording would give all the codecs more to work with; the *relative*
 standings should hold.
 
+### A second real track, and two bugs it caught (2026-08-06)
+
+Matthew supplied a 7.6-minute mix as 32-bit PCM plus a 24-bit FLAC. The WAV
+turned out to be **16-bit audio in a 32-bit container — the bottom 16 bits are
+exactly zero**, entropy 0.0000, which is the whole reason the FLAC looked 5×
+smaller. FLAC strips dead bits for free via `wasted_bits_per_sample`; anything
+compared against it has to notice them too, so `wasted_low_bits()` now detects
+this and the note says so.
+
+Three 16-bit excerpts (stripped) and one 32-bit (padding intact):
+
+| item | gzip | lzma | bz2 | **flac** | rice | register | reg-persist | bit-tree |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hs-loud | 1.10× | 1.23× | 1.36× | **1.87×** | 1.63× | 1.60× | 1.68× | 1.64× |
+| hs-quiet | 2.10× | 2.76× | 3.04× | **3.64×** | 3.17× | 3.24× | — | 3.23× |
+| hs-mid | 2.07× | 2.92× | 3.52× | **3.81×** | 3.33× | 3.40× | 3.60× | 3.39× |
+| hs-mid32 | 3.81× | 5.79× | 6.94× | **7.60×** | 1.54× | 2.53× | 1.69× | 1.84× |
+
+**Bug one: the harness was lying about FLAC.** `flac_bits` hardcoded 16-bit
+output, so for a 32-bit item it wrote the *low* half — the dead padding — and
+FLAC dutifully compressed pure silence to a reported **170×**. Fixed to write
+the item's real width; the honest figure is 7.60×.
+
+**Bug two: the adaptive models were resetting every 16 records** *and* indexing
+bit positions relative to each block's residual width, so position 0 meant a
+different bit in every block. They had been relearning a moving target all
+along. A persistent LSB-indexed variant gains 5–6% on real music and, with it,
+**the register overtakes the bit-tree** (1.68 vs 1.64, 3.60 vs 3.39) while
+still using 16 parameters against 65,536.
+
+### Persistence is not simply better, and the reason is the session's own lesson
+
+On the wasted-bit item persistence *lost* badly, 2.53× → 1.69×, which looked
+like a third bug and isn't. `zigzag(-65536)` is 131071 — **all sixteen low bits
+set**. So after zigzagging, dead bits become sign-correlated: all-zero for
+positive residuals, all-one for negative. Within a block the sign is usually
+constant and those positions cost nothing; across the stream they average to a
+coin flip and cost a full bit each. Measured at 1.88× against 1.05× on a signal
+with explicit sign runs, stable at any length.
+
+That is exactly the finding from the whole-stream entropy experiments — measure
+locally, not globally — reappearing in the *model* rather than the corpus. It
+argues that per-block versus persistent should itself be a per-block choice,
+alongside the register/bit-tree choice already queued for the hybrid experiment.
+
+It also names a concrete gap: **wasted bits must be stripped before residual
+coding, not after.** FLAC strips first, which is most of why it reads 7.60×
+against our 2.53×. Doing the same is cheap and mechanical.
+
 ### Corpus limitation, mostly resolved
 
 Most of the system's audio gallery is 8-bit sound inside a 16-bit container —

@@ -213,9 +213,27 @@ class TestDepthHeuristic(unittest.TestCase):
         self.assertFalse(full)
         self.assertGreater(zero_low, 0.9)
 
-    def test_heavily_quantised_material_is_caught(self):
+    def test_few_distinct_values_is_NOT_penalised(self):
+        """A quiet passage visits few values and that is not degeneracy.
+
+        Matthew's mid excerpt touches 131 of 65,536 values and was briefly
+        misflagged. Small values are not dead bits: both byte- and
+        sample-oriented models handle them, so the comparison stays fair.
+        """
         records = [(i % 40) * 3 + 1 for i in range(50000)]
-        self.assertFalse(corpus.effective_depth(records)[0])
+        self.assertTrue(corpus.effective_depth(records)[0])
+
+    def test_wasted_low_bits_are_caught(self):
+        # 16-bit audio exported into a 32-bit container: half padding.
+        records = [(v << 16) for v in range(1, 40000)]
+        self.assertEqual(corpus.wasted_low_bits(records, 32), 16)
+        self.assertFalse(corpus.effective_depth(records, 32)[0])
+
+    def test_no_wasted_bits_when_the_bottom_moves(self):
+        self.assertEqual(corpus.wasted_low_bits([1, 2, 4, 8], 16), 0)
+
+    def test_all_zero_stream_is_all_wasted(self):
+        self.assertEqual(corpus.wasted_low_bits([0, 0, 0], 16), 16)
 
     def test_empty_stream_does_not_crash(self):
         self.assertTrue(corpus.effective_depth([])[0])
@@ -275,3 +293,65 @@ class TestWavLoading(unittest.TestCase):
 
     def test_missing_file_is_declined(self):
         self.assertIsNone(corpus.load_wav("/nonexistent/nope.wav"))
+
+
+class TestLocalVersusPersistentModels(unittest.TestCase):
+    """Why per-block adaptation is not simply worse than carrying state.
+
+    Carrying probabilities across blocks helps when the statistics are
+    stationary -- real music gained 5-6%. It *hurts* badly when they are
+    locally coherent but globally balanced, which zigzag manufactures:
+    zigzag(-65536) is 131071, so a dead low bit reads 0 for positive
+    residuals and 1 for negative ones. Inside a block the sign is usually
+    constant and the position is free; across the stream it averages to a
+    coin flip and costs a full bit. Same lesson as measuring locally rather
+    than whole-stream, arriving this time in the model instead of the
+    corpus.
+    """
+
+    def wasted_bit_signal(self, count=6000, run_length=64):
+        """Multiples of 65536 whose sign is held constant in runs.
+
+        Explicit rather than a random walk: an earlier version used one and
+        passed or failed depending on how often the walk happened to cross
+        zero, which is exactly the variable under test. Constructing the
+        runs directly makes the result stable at any length.
+        """
+        out = []
+        for index in range(count):
+            sign = 1 if (index // run_length) % 2 == 0 else -1
+            magnitude = 1000 + (index * 37) % 9000
+            out.append((sign * magnitude << 16) & 0xFFFFFFFF)
+        return corpus.Item("t/wasted", "records", out, 32)
+
+    def test_zigzag_turns_dead_bits_into_sign_correlated_ones(self):
+        self.assertEqual(coders.zigzag(65536) & 0xFFFF, 0)
+        self.assertEqual(coders.zigzag(-65536) & 0xFFFF, 0xFFFF)
+
+    def test_per_block_beats_persistent_on_sign_correlated_dead_bits(self):
+        item = self.wasted_bit_signal()
+        per_block = item.raw_bits / coders.predict_then_bits(
+            item, "register", orders=(0,))
+        persistent = item.raw_bits / coders.predict_then_bits(
+            item, "register-persist", orders=(0,))
+        self.assertGreater(per_block, persistent * 1.3)
+        # measured ~1.88x against ~1.05x, stable across stream lengths
+
+    def test_persistent_beats_per_block_when_statistics_are_stationary(self):
+        # A steady stream with no sign flipping: carrying state pays.
+        records = [40000 + (i * 7 % 300) for i in range(6000)]
+        item = corpus.Item("t/steady", "records", records, 16)
+        per_block = item.raw_bits / coders.predict_then_bits(
+            item, "register", orders=(1,))
+        persistent = item.raw_bits / coders.predict_then_bits(
+            item, "register-persist", orders=(1,))
+        self.assertGreater(persistent, per_block)
+
+    def test_both_still_refuse_to_compress_noise(self):
+        import random
+        rng = random.Random(5)
+        item = corpus.Item("t/noise", "records",
+                           [rng.getrandbits(16) for _ in range(4000)], 16)
+        for describe in ("register", "register-persist"):
+            ratio = item.raw_bits / coders.predict_then_bits(item, describe)
+            self.assertLess(ratio, 1.05, msg=describe)

@@ -32,10 +32,19 @@ checklists live in the plans; only the headline sits here.
       music, the whole FLAC gap is its per-block linear-prediction
       coefficients versus our fixed orders 0-3. Orthogonal to the register
       and the highest-value single change available. Top of Phase 2.
-- [ ] **Re-run on a RAW recording** when Matthew has one — the current take
-      came from a 320 kbps MP3, whose decoder rounding leaves the bottom
-      eight bits at entropy 1.0000. Half of every sample is incompressible by
-      anything, capping every ratio measured.
+- [x] ~~Re-run on a RAW recording~~ — done 2026-08-06 with the 7.6-minute
+      32-bit mix. Register now beats the bit-tree on real music once models
+      persist across blocks (1.68 vs 1.64, 3.60 vs 3.39).
+- [ ] **Strip wasted bits before residual coding.** The 32-bit file is 16-bit
+      audio in a 32-bit box; FLAC strips the dead half for free and reads
+      7.60x against our 2.53x. Cheap, mechanical, and most of that gap.
+- [ ] **Make per-block-vs-persistent a per-block choice**, alongside the
+      register/bit-tree hybrid. Persistence gains 5-6% on stationary music
+      and loses 45% where zigzag makes dead bits sign-correlated. Neither
+      wins everywhere, and the encoder already knows enough to pick.
+- [ ] **Reconsider zigzag for data with dead low bits** — zigzag(-65536) sets
+      all sixteen low bits, converting dead positions into sign-correlated
+      ones. Sign-magnitude or stripping first would avoid it.
 - [ ] **Linked bits ("entanglement")**: constrain two bits to collapse
       together (equal or opposite), shrinking the possibility space the way
       the quantum framing suggests. Musical payoff too: entangled steps across

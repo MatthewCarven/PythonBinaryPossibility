@@ -117,19 +117,30 @@ def bz2_bits(item) -> float:
 
 
 def flac_bits(item) -> Optional[float]:
-    """Actual FLAC output size. Audio only; None if FLAC isn't installed."""
+    """Actual FLAC output size. Audio only; None if FLAC isn't installed.
+
+    The WAV handed to FLAC must be the item's real width. Writing a 32-bit
+    item as 16-bit keeps its *low* half -- which for a 32-bit container
+    holding 16-bit audio is the dead padding, so FLAC would be handed pure
+    silence and report a fictional ratio. That bug produced a 170x reading
+    before it was caught.
+    """
     if item.kind != "audio" or not shutil.which("flac"):
         return None
     rate = item.sample_rate or 44100
+    width = 16 if item.width <= 16 else 32
+    sample_width = width // 8
+    code = "<H" if width == 16 else "<I"
+    mask = (1 << width) - 1
     with tempfile.TemporaryDirectory() as tmp:
         source = os.path.join(tmp, "in.wav")
         target = os.path.join(tmp, "out.flac")
         with wave.open(source, "wb") as writer:
             writer.setnchannels(1)
-            writer.setsampwidth(2)
+            writer.setsampwidth(sample_width)
             writer.setframerate(rate)
             writer.writeframes(
-                b"".join(struct.pack("<H", r & 0xFFFF) for r in item.records)
+                b"".join(struct.pack(code, r & mask) for r in item.records)
             )
         result = subprocess.run(
             ["flac", "-8", "-s", "-f", "-o", target, source],
@@ -204,6 +215,61 @@ def _register_block_bits(block: Sequence[int], width: int,
     return total
 
 
+#: Widest residual position a persistent model will track.
+MAX_TRACKED_WIDTH = 64
+
+
+class PersistentRegister:
+    """One adaptive probability per bit position, carried across blocks.
+
+    Two things differ from the per-block version, and both matter:
+
+    * **Positions are indexed from the LSB**, so position k always means bit
+      k. The per-block version indexed from the top of *that block's*
+      residual width, which shifts meaning whenever the width changes -- a
+      model relearning a moving target.
+    * **State survives the block boundary.** With 16 records per block, a
+      per-block model gets 16 observations per position before being thrown
+      away. On a 32-bit residual that is not enough to learn anything,
+      which is why the wasted-bit case scored so poorly.
+
+    Costs can be evaluated speculatively (for choosing a predictor order)
+    and only the winner committed, via :meth:`snapshot` / :meth:`restore`.
+    """
+
+    __slots__ = ("zeros", "ones")
+
+    def __init__(self):
+        self.zeros = [1.0] * MAX_TRACKED_WIDTH
+        self.ones = [1.0] * MAX_TRACKED_WIDTH
+
+    def snapshot(self):
+        return (self.zeros[:], self.ones[:])
+
+    def restore(self, state) -> None:
+        self.zeros, self.ones = state[0][:], state[1][:]
+
+    def cost(self, block: Sequence[int], width: int) -> float:
+        """Bits to code a block, adapting as it goes."""
+        limit = min(width, MAX_TRACKED_WIDTH)
+        total = 0.0
+        zeros, ones = self.zeros, self.ones
+        for value in block:
+            for level in range(limit):
+                bit = (value >> level) & 1
+                zero_count = zeros[level]
+                one_count = ones[level]
+                denominator = zero_count + one_count
+                total -= math.log2(
+                    (one_count if bit else zero_count) / denominator
+                )
+                if bit:
+                    ones[level] = one_count + 1.0
+                else:
+                    zeros[level] = zero_count + 1.0
+        return total
+
+
 def _bittree_block_bits(block: Sequence[int], width: int) -> float:
     """Describe a block with one probability per tree NODE -- LZMA's model.
 
@@ -233,13 +299,20 @@ def predict_then_bits(item, describe: str, block: int = 16,
     Each block independently picks whichever predictor order describes it
     most cheaply, exactly as FLAC does, and pays a header for the choice.
     """
+    if describe not in ("rice", "register-static", "register",
+                        "register-persist", "bittree"):
+        raise ValueError(f"unknown describer {describe!r}")
+
     values = to_signed(item.records, item.width)
+    persistent = PersistentRegister() if describe == "register-persist" else None
     total = 0.0
     for start in range(0, len(values), block):
         window_start = max(0, start - 3)
         window = values[window_start:start + block]
         offset = start - window_start
         best = None
+        best_chunk = None
+        saved = persistent.snapshot() if persistent else None
         for order in orders:
             chunk = [zigzag(v) for v in residuals(window, order)[offset:]]
             if not chunk:
@@ -251,13 +324,21 @@ def predict_then_bits(item, describe: str, block: int = 16,
                 cost = _register_block_bits(chunk, width, static=True)
             elif describe == "register":
                 cost = _register_block_bits(chunk, width, static=False)
-            elif describe == "bittree":
-                cost = _bittree_block_bits(chunk, width)
+            elif describe == "register-persist":
+                # Trial runs must not pollute the carried-over state; only
+                # the winning order gets committed, below.
+                persistent.restore(saved)
+                cost = persistent.cost(chunk, width)
             else:
-                raise ValueError(f"unknown describer {describe!r}")
+                cost = _bittree_block_bits(chunk, width)
             cost += BLOCK_HEADER_BITS
             if best is None or cost < best:
                 best = cost
+                best_chunk = (chunk, width)
+        if persistent:
+            persistent.restore(saved)
+            if best_chunk:
+                persistent.cost(*best_chunk)
         total += best or 0.0
     return total
 
@@ -312,8 +393,8 @@ MODELS = [
      "FLAC's model: no probabilities, geometric assumption"),
     ("predict+register", lambda i: predict_then_bits(i, "register"),
      "OURS: one probability per bit position, adaptive"),
-    ("predict+reg-static", lambda i: predict_then_bits(i, "register-static"),
-     "OURS: measured per block, probabilities transmitted"),
+    ("predict+reg-persist", lambda i: predict_then_bits(i, "register-persist"),
+     "OURS: one probability per bit position, carried across blocks"),
     ("predict+bittree", lambda i: predict_then_bits(i, "bittree"),
      "LZMA's model: one probability per tree node"),
 ]
