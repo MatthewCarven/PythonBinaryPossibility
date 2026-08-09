@@ -3,6 +3,179 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-09 (E3) — Local balance is not a knife-edge; the model was
+
+Ran E3 straight after writing `PLAN-generators.md`, because it was the one
+number that decided whether `RandomGeneratorPerfect` was a curiosity or a
+component. Reproduce with `python -m benchmarks.e3`; raw output in
+`benchmarks/results-2026-08-09-e3.txt`. New file `benchmarks/balance.py`.
+
+**The verdict: not a knife-edge.** At 2% substitution the global experiment kept
+25% of its available bits. Locally, **82.1% survives** (1.1709x), and the decay
+is smooth and roughly linear — 94.5% at 0.5%, 64.5% at 5%, 44.3% at 10%, and
+exactly 1.0000x at 100% with no fantasy at the far end. The swap perturbation,
+which preserves the whole-file histogram EXACTLY and damages only locality,
+tells the same story from the other side: 70.3% still standing at 2%.
+
+**Why the two disagree, and it is not a contradiction.** The global saving was
+1,354 bits out of 524,288 — 0.26% of the file, and a 0.26% signal is swamped by
+any noise at all. The local saving is 17.8% of the file. "Knife-edge" was never
+a statement about balance; it was a statement about a signal too small to
+survive contact with anything. And the difference is structural: the global
+saving grows as ~(A-1)/2*log2(N) and is gone by 16 MB, while the local saving is
+**linear in N** — a flat 17.77% of the file at 4 KB, 64 KB, 1 MB and 16 MB alike.
+
+**The design change, and it is the real finding. `min()` is a max-statistic.**
+v1 exactly as planned scores **0.0% at 0.5% substitution** — total collapse,
+worse than the global result it was meant to beat. Instrumented, the cause is
+specific and mechanical: eligibility is anchored to `min(counts)`, one symbol
+that stops being drawn holds the minimum down forever, and the eligible set
+degenerates to that single laggard. Median eligible set **1 of 256**, miss rate
+**98.1%** — while the perturbed data's own count spread was still tiny. *The
+data was never the problem.* A balanced generator self-corrects because it
+always pulls toward the minimum; a balanced model of imperfect data only counts,
+and has no such feedback.
+
+Resetting the counts every 256 symbols fixes it completely: eligible set 129 of
+256, miss rate 2.1%, which is exactly the substitution rate. So **`window` joins
+`width` and `order` as a first-class agreed parameter** — it costs nothing to
+share and it is the difference between 0% and 82%. *Measure locally, not
+globally*, for the third time in this project, and the first time it has applied
+to the **model** rather than the data.
+
+**The soft model was not the answer.** `TiltBalance` (exponential tilt, nothing
+ever impossible — the pool model in other clothing) tracks the windowed hard
+model but never beats it: 79.3% vs 82.1% at 2%, 52.5% vs 64.5% at 5%. Softness
+was not what was missing; the window was. Which keeps the plan's exact
+combinatorial identities alive, so this is the cheap outcome as well as the
+right one.
+
+**A sequencing mistake worth remembering.** The plan scoped the escape symbol as
+E5, "only worth running if E3 says the local property survives". Backwards: E3
+*cannot run* without it, because perturbed data immediately meets a
+zero-probability symbol and there is no number to report. An experiment that
+perturbs data needs the model complete first. (The escape turned out to cost
+15.99 bits over a whole 64 KB file when it never fires.)
+
+**Controls all held.** Uniform noise 1.0000x; clean data shuffled whole-file
+1.0000x; 100% substituted 1.0000x; gzip/lzma/bz2 all *expand* perfect balance
+(0.999/0.999/0.990x); seed spread 0.0022 at the decisive rate. The important one
+is an order-0 adaptive frequency model, which is **blind** to balance by
+construction — it sees a flat histogram and says 8 bits — and every balance
+number is quoted against it. A sharper control with the same locality and no
+balance (`WindowedOrder0`) gains *nothing* on flat data; it is worse than the
+global model, because resetting a frequency model on a flat histogram just costs
+you the relearning. All of the gain is balance.
+
+**Where the project's existing randomness sits.** Mersenne Twister and
+`os.urandom` are indistinguishable from each other and from nothing: both read
+spread 5 where theory says ~5, both yield exactly 1.0000x. No local balance
+structure in the randomness we already use, which is correct behaviour for a
+PRNG and is now measured rather than assumed. A counter mod 256 is *perfectly*
+balanced and reads identically to the generator's own output — while lzma gets
+**176x** on it against balance's 1.2161x, a clean reminder that "this model
+fires" and "this model is the right one" are different claims. Text and shuffled
+enumeration are the honest losses: balance costs 1.09 bits/symbol against a
+plain frequency model on text, and a packet type that fired there would be
+actively harmful.
+
+**One row not claimed.** Real audio reads +0.95 b/sym raw and +1.36 b/sym on
+residuals, which looks significant and is NOT being banked. At a 33-44% miss
+rate the escape flag has stopped being an escape and become a hot/cold frequency
+split — the opposite of what balance claims to do. The available local baseline
+resets to a Laplace prior of 256 pseudo-counts and then sees 64 real ones, so it
+is over-smoothed and unfair on peaked data. Needs an *aged* local frequency
+model. Open, and on TODO.
+
+**The rack payoff is real.** 5,000 collapses of a 16-step track at p=0.5:
+independent coin gives sd 1.95 with **3.18% of bars at <=4 hits and 3.70% at
+>=12**; a balanced selector gives sd 0.00 and none. One bar in fifteen currently
+comes out lopsided enough to hear. Balanced steps cost 2.7656 bits/step against
+1.0000 for a coin — per-bit balance is the most expensive setting on the whole
+dial, and for a drum pattern the expense IS the feature.
+
+**Kill criteria: none triggered. Verdict: build it, with the window.** The
+narrow-target warning stands — this wins on balance-constrained data and loses
+honestly on text.
+
+## 2026-08-09 (later) — Designing `RandomGeneratorPerfect`, and balance measured locally
+
+A planning session, kept in design on purpose. Matthew described a "perfect"
+random generator: an array of counts, an *order* meaning the maximum deviation
+between the highest and lowest count, and a selector that picks from the least-
+used values. Output in [PLAN-generators.md](PLAN-generators.md). Nothing built.
+
+**What it is.** A low-discrepancy sequence — his "order" is what the literature
+calls *discrepancy*, and bounding it at 1 is a shuffle-bag, the thing modern
+Tetris uses for exactly the reason he gave, that true randomness clumps and
+players read clumping as broken. Naming the prior art bought an established
+measurement and an established failure mode, both now tests.
+
+**The framing that made the design fall out.** The class does not produce
+randomness; it *spends* randomness to buy evenness, at a computable rate. Which
+means it needs an injected `rng` rather than an owned one, or the claim is a
+lie — and it means the cost is a number rather than a vibe.
+
+**Finding 1 — the price of perfect balance is `log2(e)`, and it is already in
+the repo.** Perfect balance costs `log2(A) - log2(A!)/A` bits per symbol, which
+converges to log2(e) = 1.4427 and then stops moving: 50% of the symbol at A=2,
+17.8% at A=256, 4.5% at width 32. That last number is the 1.0472x permutation
+ceiling `randomness_demo.py` has been printing all along — a permutation of
+every 32-bit value *is* one complete round of a perfect generator at width 32.
+The two agree to 1.4e-10. Two consequences: metering by the bit, which Matthew
+floated, is the worst available choice, and wider symbols make balance nearly
+free.
+
+**Finding 2 — balance is a locality property, and locality is worth 69x.**
+The balance thread measured a globally-balanced 64 KB as having 1,354 spare
+bits in it, and concluded a knife-edge. Constrain *every window of 256* instead
+of the file total and the pot is **93,185 bits, 1.2162x**. The earlier result
+was not wrong; a whole-file histogram constrains only the final counts, while
+`order` constrains every prefix. *Measure locally, not globally* — the second-
+oldest lesson in the project — arriving from a direction nobody was looking at.
+
+Open, and now the most valuable unknown here: the global result collapsed under
+a 2% perturbation. Whether the local one does is **unmeasured**, and it decides
+whether the class is a curiosity or a component. It is E3 in the plan.
+
+**Finding 3 — Matthew's predicted curve has a closed form.** A free RNG's
+max-min spread grows as sqrt(N) forever — measured 5, 11, 22, 47, 92, 175 as N
+quadruples, dead on — while a perfect one stays pinned at `order`. That
+divergence is the entire compressible difference. The asymptotic constant
+`2*sqrt(2 ln A)` runs ~16% high at A=256 and is documented as biased rather
+than silently fitted.
+
+**Finding 4 — the determinism trap.** At order=1 with ties broken by index the
+output is `0,1,2,...,15,0,1,2,...`: perfectly balanced, spread 0, and **zero
+bits per symbol**. It is a counter. The dial does not run from bad randomness
+to good, it runs from a free RNG to a counter, and both ends are useless for
+opposite reasons. Guarded by a test rather than a comment.
+
+**Verified before shipping the plan.** Eight of the twelve proposed tests were
+run against a forty-line throwaway, because a plan whose central identity does
+not hold is worse than no plan. All passed. The identity — `charge == R*log2(A!)`
+at order=1, for every path — holds to 2.8e-14, and `log2((8!)^3)` confirms the
+charge really is the log of the number of streams the generator could have
+emitted. At order>1 the closed form genuinely dies (185 distinct charges over
+200 seeds, spanning 15 bits), so the plan says so rather than fudging it.
+The naive O(A)-per-draw implementation needs 507 s for 100k draws at width 16 —
+so the cheapest-in-bits width is the one the naive version cannot reach, and a
+bucket structure is scoped but deliberately deferred until a test points at it.
+
+**Decisions of record.** New module `BinaryRandom.py` (not folded into
+`BinaryEntropy.py`, which is static and measures; this is stateful). Three
+faces on one counts array — generate, measure a real stream, charge code
+lengths — because the third is fifteen lines and is what lets it clear the
+admission bar. Hard eligibility only in v1; the soft pool model and an escape
+symbol are scoped in the plan and deferred, and `cost_of()` returning infinity
+on an ineligible value is documented v1 behaviour, not a TODO.
+
+**Cross-link worth keeping.** The "exotic multi-dimensional" generator Matthew
+set aside is balancing *pairs*, which is the same feature as linked bits /
+entanglement, the same feature as correlated probabilities, and the same gap as
+"nothing measures whether bit 3 predicts bit 4". Four routes to cross-position
+structure, all stopped at the same wall. It lands once or not at all.
+
 ## 2026-08-09 — The word lens, the map, and what the counts alone permit
 
 A design session that stayed in design deliberately. Matthew is sketching a

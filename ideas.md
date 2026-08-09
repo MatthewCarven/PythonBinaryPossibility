@@ -227,6 +227,19 @@ which arrives with an exact predicted ratio and is therefore self-checking;
 and highly ordered data, which Matthew has flagged twice as "a bit different"
 and which is the one class the corpus is thinnest on.
 
+**The balanced generator has graduated** — 2026-08-09, to
+[PLAN-generators.md](PLAN-generators.md) as `RandomGeneratorPerfect`. It went
+first because it is the only candidate whose model is *free*: the decoder
+rebuilds the histogram from what it has already decoded, so unlike a seed, a
+rotation index or a tap polynomial there is nothing to transmit. The other
+three are still sketches and the two named above are still unwritten.
+
+Two results from that design work belong back here because they change what the
+rest of this file means — see the balance thread below for the second, and note
+in passing that the price of perfect balance turns out to be **log2(e) = 1.4427
+bits per symbol regardless of alphabet size**, which is the same constant as the
+permutation ceiling `randomness_demo.py` prints.
+
 ---
 
 ## The balance thread
@@ -288,6 +301,40 @@ vanished by 16 MB.
 hindsight. Naming one of nine candidates costs ~3.2 bits, negligible against
 1,291 and most of the 6 left at 50%.)*
 
+### Correction, 2026-08-09 — everything above measured balance GLOBALLY
+
+The gloomy summary stands only for the question it was asking. "Every byte value
+appears exactly 256 times" constrains the *final counts* and nothing else, so
+the whole 64 KB has 1,354 spare bits in it.
+
+Constrain every *window* of 256 instead — which is what
+[PLAN-generators.md](PLAN-generators.md)'s `order` parameter does — and the same
+file has **93,185 spare bits, a 1.2162x ratio. Sixty-nine times more.**
+**Measured.** A whole-file histogram is a far weaker statement than a bound on
+every prefix, and the difference between them is most of what there is to have.
+
+*Measure locally, not globally*, arriving for the third time and from a
+direction nobody was looking at. It does not overturn the table above; it says
+the table was pricing the cheaper of two properties.
+
+**Answered the same day by E3 — it does not inherit the global answer.**
+**Measured:** at 2% substitution the local property keeps **82.1%** of its
+saving where the global one kept 25%, and it decays smoothly rather than falling
+off a cliff. The reason the two differ is not that balance behaves differently
+at different scales: the global saving was 1,354 bits out of 524,288, **0.26% of
+the file**, and any noise at all swamps a 0.26% signal. The local saving is
+17.8% of the file. *"Knife-edge" was a statement about a signal too small to
+survive contact with anything, not about balance.*
+
+And it scales differently in kind, not degree. The `(A-1)/2*log2(N)` growth
+above is why the global saving vanishes by 16 MB. The local saving is **linear
+in N** — a flat 17.77% of the file at 4 KB, 64 KB, 1 MB and 16 MB alike.
+
+The thing that *was* brittle turned out to be the model, not the data: see
+`PLAN-generators.md § E3, and what it changed`. Eligibility anchored to
+`min(counts)` is a max-statistic and one laggard pins it forever. That is worth
+carrying to any future idea in this file that keys off a running minimum.
+
 ---
 
 ## Tangents parked
@@ -315,10 +362,16 @@ locality alone, one the best case measured all project and the other provably
 hopeless.
 
 **"Perfect randomness is computable and highly selective based on starting
-numbers if it's random orderly."** Not resolved, and worth returning to
-properly rather than in passing. The nearest thing already in the repo is
-`randomness_demo.py`, which shows 120 KB of noise that gzip and lzma both
-enlarge coming from a 68-byte line of Python.
+numbers if it's random orderly."** Returned to properly on 2026-08-09 and now
+half-resolved. *Computable*: yes, and the price is exactly log2(e) bits per
+symbol. *Highly selective*: yes, and the selectivity is the eligible set, which
+shrinks from A to 1 across a round. *Based on starting numbers*: this is the
+part that did not survive — a balanced generator depends on its starting value
+far less than the phrasing suggests, because every round resets. What actually
+carries the dependence is the injected `rng`, which is a seed argument again.
+See [PLAN-generators.md](PLAN-generators.md). The nearest thing already in the
+repo is still `randomness_demo.py`, which shows 120 KB of noise that gzip and
+lzma both enlarge coming from a 68-byte line of Python.
 
 **Linked bits / entanglement** lives in `TODO.md` and is deliberately not
 duplicated here — it is the *same feature* as correlated probabilities, which

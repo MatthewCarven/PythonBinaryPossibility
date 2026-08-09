@@ -1,0 +1,155 @@
+E3 -- the local knife-edge.  python -m benchmarks.e3   (2026-08-09)
+
+  E3 — IS LOCAL BALANCE A KNIFE-EDGE TOO?
+  Globally, a 2% perturbation destroyed three-quarters of the available
+  bits. The local property is worth 69x more. Same question, local.
+
+------------------------------------------------------------------------------
+ 0. THE FOUR MODELS, on unperturbed order=1 output
+------------------------------------------------------------------------------
+  order-0 frequencies (control)        0.9980x    8.0160 bits/sym   miss  0.0%
+  running counts, hard + escape        1.2161x    6.5784 bits/sym   miss  0.0%
+  windowed counts (reset per 256)      1.2161x    6.5784 bits/sym   miss  0.0%
+  soft exponential tilt                1.2148x    6.5852 bits/sym   miss  0.0%
+  closed form for order=1              1.2162x    6.5781 bits/sym
+
+  The order-0 control is BLIND to balance, as it must be — it sees a flat
+  histogram and says 8 bits. Every number below is quoted against it.
+
+------------------------------------------------------------------------------
+ 1. SUBSTITUTION — a fraction of symbols replaced by uniform draws
+------------------------------------------------------------------------------
+  The closest analogue of the global experiment. Median of 3 seeds.
+  'kept' is the fraction of the 1.4219 bits/symbol perfect saving that survives.
+
+     rate  spread |   order-0 |   running    kept |  windowed    kept       @o/w |      tilt    kept
+    0.0%       0 |   0.9980x |   1.2161x 100.0% |   1.2161x 100.0%   (1, 256) |   1.2148x  99.5%
+    0.5%       2 |   0.9980x |   1.0001x   0.0% |   1.2018x  94.5%   (1, 256) |   1.2010x  94.2%
+    1.0%       2 |   0.9980x |   1.0000x  -0.0% |   1.1897x  89.7%   (1, 256) |   1.1873x  88.8%
+    2.0%       2 |   0.9980x |   1.0000x  -0.0% |   1.1709x  82.1%   (1, 256) |   1.1641x  79.3%
+    5.0%       2 |   0.9980x |   1.0000x  -0.0% |   1.1295x  64.5%   (1, 256) |   1.1028x  52.5%
+   10.0%       3 |   0.9981x |   1.0000x  -0.0% |   1.0855x  44.3%   (1, 256) |   1.0753x  39.4%
+   25.0%       3 |   0.9982x |   1.0000x  -0.0% |   1.0226x  12.5%   (1, 256) |   1.0253x  13.9%
+   50.0%       4 |   0.9983x |   1.0000x  -0.0% |   1.0000x  -0.0%    (8, 64) |   1.0032x   1.8%
+  100.0%       5 |   0.9983x |   1.0000x  -0.0% |   1.0000x  -0.0%    (8, 64) |   0.9999x  -0.1%
+
+------------------------------------------------------------------------------
+ 2. WHY v1 COLLAPSED — the running model is pinned by its laggards
+------------------------------------------------------------------------------
+  running   median eligible set     1 of 256   miss rate 98.1%   values at the minimum:   1
+  windowed  median eligible set   129 of 256   miss rate  2.1%   values at the minimum:   4
+
+  The 2%-perturbed data still has a final count spread of 2 out of 256 draws each —
+  it is STILL nearly balanced. The data was never the problem. Eligibility
+  anchored to min() is a max-statistic, and max-statistics are pinned by
+  their single worst outlier. One value that stops being drawn holds `lo`
+  down forever and the eligible set degenerates to that one laggard.
+
+------------------------------------------------------------------------------
+ 3. SWAP — global histogram preserved EXACTLY, only locality damaged
+------------------------------------------------------------------------------
+  If balance were a global property this table would not move at all.
+
+     rate  spread   order-0  windowed    kept     lzma
+    0.0%       0   0.9980x   1.2161x 100.0%   0.999x
+    0.5%       2   0.9980x   1.1901x  89.9%   0.999x
+    1.0%       2   0.9980x   1.1717x  82.4%   0.999x
+    2.0%       2   0.9980x   1.1429x  70.3%   0.999x
+    5.0%       3   0.9980x   1.0882x  45.6%   0.999x
+   10.0%       3   0.9980x   1.0420x  22.7%   0.999x
+   25.0%       4   0.9980x   1.0000x  -0.0%   0.999x
+   50.0%       4   0.9980x   1.0000x  -0.0%   0.999x
+  100.0%       5   0.9980x   1.0000x  -0.0%   0.999x
+
+------------------------------------------------------------------------------
+ 4. SCALE — the global saving vanishes with file size. Does the local one?
+------------------------------------------------------------------------------
+          size     local (bits)   global (bits)  local/global  local as % of file
+         4,096            5,824             846            7x             17.77%
+        65,536           93,185           1,354           69x             17.77%
+     1,048,576        1,490,959           1,864          800x             17.77%
+    16,777,216       23,855,347           2,374       10,048x             17.77%
+
+  The global saving grows as ~(A-1)/2*log2(N) and is gone by 16 MB.
+  The local saving is LINEAR in N — it is a constant 17.8% of the file,
+  forever. That is the structural difference, not a bigger constant.
+
+------------------------------------------------------------------------------
+ 5. CONTROLS — if any of these misbehave the numbers above are fiction
+------------------------------------------------------------------------------
+  uniform noise, windowed balance         1.0000x   <= 1.0000x  a wrong model must cost
+  uniform noise, order-0                  0.9984x   <= 1.0000x
+  clean data SHUFFLED, windowed           1.0000x   ~1.0000x  same bytes, locality gone
+  100% substituted (= pure noise)         1.0000x   ~1.0000x  no fantasy at the far end
+  gzip on perfect balance                 0.9994x   < 1.0  the toolbox cannot see exhaustion
+  lzma on perfect balance                 0.9990x   < 1.0
+  bz2 on perfect balance                  0.9901x   < 1.0
+
+  seed stability at 2% substitution: 1.1711x  1.1719x  1.1728x  1.1706x  1.1713x  (spread 0.0022)
+
+------------------------------------------------------------------------------
+ 5b. THE SHARPER CONTROL — does the WINDOW alone explain the gain?
+------------------------------------------------------------------------------
+  WindowedBalance differs from Order0Coder in two ways at once: it models
+  balance, and it models locally. WindowedOrder0 has the locality and no
+  balance. Anything it matches was never about balance.
+
+  stream                     order-0  win order-0  win balance  balance adds
+  perfect order=1            0.9980x      0.9835x      1.2161x       +1.556b
+  2% substituted             0.9980x      0.9837x      1.1696x       +1.292b
+  5% substituted             0.9980x      0.9840x      1.1287x       +1.042b
+  counter mod 256            0.9980x      0.9835x      1.2161x       +1.556b
+  Mersenne Twister           0.9983x      0.9945x      1.0000x       +0.045b
+
+  On balance-constrained data the window alone gains NOTHING (it is worse
+  than the global model — resetting a frequency model on a flat histogram
+  just costs you the relearning). All of the gain is balance.
+
+  CAVEAT, and it is why the audio row of the panel is not claimed below:
+  WindowedOrder0 resets to a Laplace prior of 256 pseudo-counts and then
+  sees only `window` real ones, so on a 64-symbol window it is badly
+  over-smoothed and is NOT a fair local-frequency baseline for peaked data.
+  It is a fair baseline here, where the histogram really is flat.
+
+------------------------------------------------------------------------------
+ 6. THE PANEL — where the randomness this project already has sits
+------------------------------------------------------------------------------
+  spread = median max-min over non-overlapping 256-byte windows.
+  A free RNG should read ~5 at that window size; perfect balance reads 0.
+  'gain' is windowed-balance minus order-0: what BALANCE contributed,
+  once vocabulary and frequency are taken out.
+
+  stream                  spread   order-0  windowed     gain       @o/w   miss      lzma
+  perfect order=1              0   0.9980x   1.2161x  +1.438b   (1, 256)  0.0%    0.999x
+  perfect order=16             4   0.9980x   1.0000x  +0.016b    (8, 64)  0.0%    0.999x
+  Mersenne Twister             5   0.9983x   1.0000x  +0.013b    (8, 64)  0.0%    0.999x
+  os.urandom                   5   0.9984x   1.0000x  +0.013b    (8, 64)  0.0%    0.999x
+  counter mod 256              0   0.9980x   1.2161x  +1.438b   (1, 256)  0.0%  176.172x
+  enum/ordered 32-bit        128   1.6830x   2.2492x  +1.197b  (2, 1024) 74.8%    9.948x
+  enum/shuffled 32-bit       129   1.6830x   1.5522x  -0.400b   (8, 256) 47.4%    2.205x
+  real audio, raw bytes       24   1.0642x   1.2178x  +0.948b    (2, 64) 33.2%    1.384x
+  real audio, residuals       24   1.2410x   1.5733x  +1.362b    (4, 64) 43.6%    2.343x
+  source text                 61   1.6874x   1.3712x  -1.093b  (2, 1024) 89.5%   14.841x
+
+  READ THIS TABLE WITH 5b's CAVEAT. The two rows with a high miss rate and
+  a peaked histogram -- real audio raw and residuals -- are NOT claimed as
+  balance wins. At a 33-44% miss rate the escape flag has stopped being an
+  escape and become a hot/cold frequency split, which is the OPPOSITE of
+  what this model claims to be doing. Resolving that needs a properly aged
+  local frequency baseline, not a reset one. Open.
+  The rows that ARE clean: perfect balance and counter (+1.44b, 0% miss),
+  and the two negative rows -- text and shuffled enumeration -- where
+  balance honestly LOSES to a plain frequency model.
+
+------------------------------------------------------------------------------
+ 7. THE RACK — what an independent coin per step does to a 16-step bar
+------------------------------------------------------------------------------
+  PsynthRack.collapse() flips one coin per undecided step.
+
+  independent coin     mean  8.02  sd 1.95  bars with <=4 hits  3.18%  >=12 hits  3.70%
+  balanced selector    mean  8.00  sd 0.00  bars with <=4 hits  0.00%  >=12 hits  0.00%
+
+  A balanced 16-step bar costs log2(16!)/16 = 2.7656 bits/step
+  against 1.0000 for a coin — per-bit balance is the most expensive
+  setting on the whole dial. For a drum pattern that expense IS the point.
+

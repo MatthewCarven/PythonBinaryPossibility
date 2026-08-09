@@ -19,6 +19,20 @@ checklists live in the plans; only the headline sits here.
       demos of the hard limits.~~ **Done 2026-08-06.** Shipped
       `BinaryEntropy.py`, `randomness_demo.py`, weighted steps in the rack
       and odds controls in the bench. The compression thread is unblocked.
+- [ ] **[PLAN-generators.md](PLAN-generators.md)** — **designed 2026-08-09, not
+      built.** `RandomGeneratorPerfect` in a new `BinaryRandom.py`: a counts
+      array, an `order` (max permitted max-min spread), and a selector that
+      draws uniformly from the least-used values. Three faces on one array —
+      generate, measure a real stream's discrepancy, charge code lengths.
+      Goes first among the generators because its model is free: the decoder
+      rebuilds the histogram from what it already decoded, no seed, no side
+      channel. Headline findings: perfect balance costs **log2(e) = 1.4427
+      bits/symbol** whatever the alphabet (50% of a bit, 4.5% of a 32-bit
+      word — and it is the 1.0472x `randomness_demo.py` already prints), and
+      **balance measured locally is worth 69x balance measured globally**
+      (93,185 spare bits vs 1,354 on the same 64 KB). Eight of the twelve
+      tests already pass against a throwaway. The open question that decides
+      it all is E3.
 - [~] **[PLAN-compression.md](PLAN-compression.md)** — **Phase 1 done
       2026-08-06**, no kill criteria triggered. `benchmarks/` reproduces it.
       Finding: the register is a bounded-memory approximation of an LZMA
@@ -38,11 +52,42 @@ checklists live in the plans; only the headline sits here.
       `symbol_entropy()`, `arrangement_bits()`, `count_bits()` and
       `arrangement_floor()`. Balanced data's agreed floor is real and
       unreachable; the counts cost about what knowing them saves.
-- [ ] **Write the generators** (next session). `vocabulary(order=...)` gives a
-      deterministic word list to seed from and `arrangement_floor()` bounds
-      what any of them may claim. Sketches, verdicts and the admission test
-      are in [ideas.md](ideas.md#generators) — the bar is *lowers the
-      residual against the predictor already there*, not *is interesting*.
+- [~] **Write the generators** — first one designed 2026-08-09 in
+      [PLAN-generators.md](PLAN-generators.md); build `BinaryRandom.py` next.
+      `vocabulary(order=...)` gives a deterministic word list to seed from and
+      `arrangement_floor()` bounds what any of them may claim. Sketches,
+      verdicts and the admission test are in [ideas.md](ideas.md#generators)
+      — the bar is *lowers the residual against the predictor already there*,
+      not *is interesting*. Still unsketched after this one: LFSR output and
+      deliberate rotational structure.
+- [x] ~~**Run E3 — the local knife-edge**~~ — done 2026-08-09.
+      **Local balance is NOT a knife-edge; v1's model was.** 82.1% of the saving
+      survives 2% substitution where the global version kept 25%, and the saving
+      is **linear in N** (a flat 17.77% of the file at every size) rather than
+      logarithmic. The collapse was `min()`: eligibility anchored to a minimum is
+      a max-statistic, one laggard pins it forever, and the eligible set
+      degenerates to 1 of 256 at a 98% miss rate. Resetting counts per window
+      fixes it. No kill criterion fired. `benchmarks/balance.py`,
+      `python -m benchmarks.e3`.
+- [ ] **Build `BinaryRandom.py` — now with `window`.** `window` is a first-class
+      agreed parameter alongside `width` and `order`; it costs nothing to share
+      and it is the difference between 0% and 82%. Everything else in
+      [PLAN-generators.md](PLAN-generators.md) stands, including the twelve
+      tests and the exact identity at order=1.
+- [ ] **Resolve the audio row with an AGED local frequency baseline.** The one
+      number from E3 that is not trustworthy. Real audio reads +1.36 b/sym on
+      residuals, but at a 43% miss rate the escape flag has become a hot/cold
+      frequency split — the opposite of balance — and the reset-prior baseline
+      it is measured against is over-smoothed on peaked data. Either a real win
+      hiding in audio residuals or an artefact; currently unknown.
+- [ ] **Balanced steps in `PsynthRack.collapse()`, behind an option.** Measured
+      2026-08-09: one bar in fifteen currently collapses lopsided enough to hear
+      (3.18% of 16-step bars at <=4 hits, 3.70% at >=12; sd 1.95). A balanced
+      selector removes it entirely at 2.7656 bits/step against 1.0000 for a coin.
+      Keep the coin available — some users will want the clumping.
+- [ ] **E4 (generator as predictor) is now the interesting one**, since
+      enum/ordered at 32-bit is exactly the balance-constrained wide-symbol case
+      where balance is cheapest (4.5% of the symbol, vs 17.8% at width 8).
 - [ ] **More `BinaryEntropy`** (next session). Open questions collected in
       [ideas.md](ideas.md#open-questions-for-binaryentropy): the `skew()`
       denominator, `classify()`'s labels moving with excerpt length, whether
@@ -82,6 +127,12 @@ checklists live in the plans; only the headline sits here.
       **Note:** this is the *same feature* as correlated probabilities, which
       PLAN-probability.md deliberately leaves out of scope. Don't build it
       twice — when it lands, it lands as one layer serving both.
+      **Now four things, not two** (2026-08-09): also the "exotic
+      multi-dimensional" generator — balancing *pairs* of symbols rather than
+      singles, which is higher-order equidistribution — and the gap
+      [ideas.md](ideas.md#open-questions-for-binaryentropy) notes that nothing
+      measures whether bit 3 predicts bit 4. Four routes to cross-position
+      structure, all stopped at the same wall. One layer serving all four.
 
 ## Psynthrack & bench (added 2026-08-06)
 
