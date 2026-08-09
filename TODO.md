@@ -25,6 +25,22 @@ checklists live in the plans; only the headline sits here.
 ## Next up
 
 - [ ] **Push the latest commit** (meatthread0 — Claude doesn't push).
+- [x] ~~The word lens and `classify()`~~ — done 2026-08-09. `vocabulary()`,
+      recency measures, and a decision tree whose thresholds all come from
+      the corpus. Ordered vs shuffled enumeration are identical to the word
+      lens and separated by locality alone.
+- [x] ~~What the counts alone permit~~ — done 2026-08-09. `skew()`,
+      `symbol_entropy()`, `arrangement_bits()`, `count_bits()` and
+      `arrangement_floor()`. Balanced data's agreed floor is real and
+      unreachable; the counts cost about what knowing them saves.
+- [ ] **Data generators, now unblocked.** `vocabulary(order=...)` gives a
+      deterministic word list to seed from and `arrangement_floor()` bounds
+      what any of them may claim. Next design conversation.
+- [ ] **Decide whether `skew()` should also report against the full width.**
+      It currently divides by the alphabet *observed*, answering "given the
+      values that occur, are they uneven?". Dividing by `2**width` would
+      fold in the unused range as well. Both are meaningful; a second key
+      rather than a change would probably be right.
 - [x] ~~Re-run the benchmark against real music~~ — done 2026-08-06 with
       Matthew's vocal take. Predict-and-cancel beat gzip/lzma/bz2 by 20-55%;
       the three describers tied within 1%; FLAC still won by 15-18%.

@@ -78,6 +78,11 @@ def binary_entropy(p: float) -> float:
     return _binary_entropy(p)
 
 
+def _log2_factorial(n: int) -> float:
+    """log2(n!) via lgamma, so it survives n in the millions."""
+    return math.lgamma(n + 1) / math.log(2)
+
+
 def _coding_cost(ones: int, zeros: int, q: float) -> float:
     """Bits to code this many ones and zeros under a model that believes ``q``."""
     if ones and q > 0.0:
@@ -495,6 +500,111 @@ class BinaryEntropy:
             for index in range(width)
         ]
 
+    # --- What the counts alone permit ---
+
+    @staticmethod
+    def symbol_entropy(records: Sequence[int]) -> float:
+        """Order-0 entropy in bits per word, from observed frequencies."""
+        if not records:
+            return 0.0
+        total = len(records)
+        return -math.fsum(
+            (count / total) * math.log2(count / total)
+            for count in BinaryEntropy.word_frequencies(records).values()
+        )
+
+    @staticmethod
+    def skew(records: Sequence[int]) -> float:
+        """How far the word frequencies fall short of uniform, as a share.
+
+        0.0 means every word is equally common and frequency coding has
+        nothing to offer; 0.27 is English prose, whose letters are famously
+        uneven. This is *global* structure and a different thing from
+        :meth:`locality`, which is why both are measured: prose is skewed
+        and barely local, a drifting sensor is local and barely skewed, and
+        real music turns out to be both -- values cluster near zero *and*
+        near their neighbours, so it wants frequency coding and prediction
+        together rather than a choice between them.
+
+        Measured against the alphabet actually observed, not the one the
+        width allows, so it answers "given the values that occur, are they
+        uneven?" -- the question frequency coding is asked once the width
+        has already been dealt with. That makes it length-dependent in one
+        safe direction: a short excerpt has not met the rare values yet, so
+        its denominator is small and the reading comes in low. It converges
+        upward as the stream lengthens and never overstates the
+        opportunity.
+        """
+        distinct = len(set(records))
+        if distinct <= 1:
+            return 1.0
+        return max(0.0, 1.0 - BinaryEntropy.symbol_entropy(records)
+                   / math.log2(distinct))
+
+    @staticmethod
+    def arrangement_bits(records: Sequence[int]) -> float:
+        """Information in the *ordering*, given the word counts.
+
+        ``log2(N! / prod(count!))`` -- the number of distinct sequences with
+        exactly these counts. Once the counts are known, this is all that
+        is left to say, and no coder can go below it.
+
+        It generalises a number this project had previously hardcoded for
+        one case: a permutation, where every word appears exactly once, is
+        simply the extreme of this, and its famous ~1.047x ceiling on
+        32-bit values falls straight out.
+        """
+        if not records:
+            return 0.0
+        total = len(records)
+        counts = BinaryEntropy.word_frequencies(records).values()
+        return (_log2_factorial(total)
+                - math.fsum(_log2_factorial(c) for c in counts))
+
+    @staticmethod
+    def count_bits(records: Sequence[int], width: int) -> float:
+        """What it costs to *tell* the decoder the counts.
+
+        The number of ways ``2**width`` non-negative counts can sum to N,
+        which is ``C(N + A - 1, A - 1)``. This is the honest price of
+        discovering the distribution rather than agreeing it in advance.
+        """
+        if not records:
+            return 0.0
+        total = len(records)
+        alphabet = 1 << width
+        return (_log2_factorial(total + alphabet - 1)
+                - _log2_factorial(total)
+                - _log2_factorial(alphabet - 1))
+
+    @staticmethod
+    def arrangement_floor(records: Sequence[int], width: int) -> Dict[str, float]:
+        """The real floor, both ways round.
+
+        ``agreed`` assumes both ends already know the distribution -- the
+        optimistic figure, and the one usually quoted. ``discovered`` adds
+        the cost of transmitting it, which is what a self-contained file
+        must actually pay.
+
+        The gap between them is this project's oldest lesson wearing yet
+        another hat: a constraint saves you bits only if it is *shared*,
+        never if it has to be sent. Exactly-balanced bytes are the sharpest
+        example -- the ordering saves 1,354 bits on 64 KB, and sending the
+        counts costs rather more than that.
+        """
+        raw = len(records) * width
+        ordering = BinaryEntropy.arrangement_bits(records)
+        counts = BinaryEntropy.count_bits(records, width)
+        return {
+            "raw_bits": float(raw),
+            "arrangement_bits": ordering,
+            "count_bits": counts,
+            "agreed": ordering,
+            "discovered": ordering + counts,
+            "agreed_ratio": raw / ordering if ordering else math.inf,
+            "discovered_ratio": raw / (ordering + counts) if ordering + counts else math.inf,
+        }
+
     # --- Putting a stream on the map ---
 
     #: Below this many distinct words, treat the alphabet as small enough
@@ -508,6 +618,13 @@ class BinaryEntropy:
     #: A repeat this close is cheap to point at. Text's median gap is 14,
     #: music's 38, drifting sensor readings 442.
     NEAR_GAP = 64
+
+    #: Above this shortfall from uniform word frequencies, plain frequency
+    #: coding pays. English text sits near 0.32; audio, whose values are
+    #: spread almost evenly overall, sits near 0.03 -- and coding audio by
+    #: frequency loses to coding it by distance, which is why the advice is
+    #: derived from this rather than from the label.
+    SKEWED = 0.15
 
     #: Below this locality, no lens here has found anything: measuring in
     #: windows tells you no more than measuring the whole stream. Real
@@ -563,6 +680,8 @@ class BinaryEntropy:
         profile = BinaryEntropy.recency_profile(records)
         wasted = BinaryEntropy.wasted_low_bits(records, width)
         local = BinaryEntropy.locality(records, width, block_size)
+        bias = BinaryEntropy.skew(records)
+        floor = BinaryEntropy.arrangement_floor(records, width)
         near = profile["median_gap"] <= BinaryEntropy.NEAR_GAP
         small = profile["vocabulary"] <= BinaryEntropy.SMALL_VOCABULARY
         structured = local > BinaryEntropy.STRUCTURELESS
@@ -578,20 +697,60 @@ class BinaryEntropy:
         else:
             label = "ANALOG" if structured else "INCOMPRESSIBLE"
 
-        suits = {
-            "PADDED": "strip the dead bits, then classify again",
-            "ENUMERATED": "prediction only -- no word ever repeats",
-            "SYMBOLIC": "word selector; a register finds little here",
-            "STRUCTURED": "both: predict, and select recurring words",
-            "ANALOG": "predict first, then persist the model",
-            "INCOMPRESSIBLE": "nothing found -- expect ~1.0x, and be suspicious "
-                              "of any model that claims better",
-        }
+        # Advice is derived from the measurements rather than looked up per
+        # label, because two streams can share a label and want opposite
+        # mechanisms. Text and audio are the pair that forced this: text is
+        # globally skewed and barely local, audio is barely skewed and very
+        # local, and coding one the other's way loses.
+        mechanisms = []
+        if wasted:
+            mechanisms.append(
+                f"strip {wasted} dead low bits first -- nothing else is "
+                f"meaningful until you do")
+        if bias >= BinaryEntropy.SKEWED:
+            mechanisms.append(
+                f"frequency coding -- words are {bias:.0%} short of uniform, "
+                f"which is global structure a plain adaptive model gets")
+        if structured and profile["recurrence_rate"] > BinaryEntropy.RECURS:
+            mechanisms.append(
+                "distance / move-to-front -- values recur locally, so coding "
+                "how far back beats coding which one")
+        if structured:
+            mechanisms.append(
+                "predict and cancel, then persist the model across blocks")
+        if not mechanisms:
+            # Lead with the honest figure. The `agreed` one is only
+            # reachable when the distribution is cheap to *state*, and
+            # whether it is depends entirely on how many symbols there are:
+            # a two-symbol stream's bias costs ~18 bits to send and can be
+            # worth thousands, while a byte stream's counts cost more to
+            # send than knowing them ever saves.
+            saving = floor["raw_bits"] - floor["agreed"]
+            cheap = floor["count_bits"] < saving
+            mechanisms.append(
+                f"no mechanism above threshold -- expect about "
+                f"{floor['discovered_ratio']:.5f}x, and treat better than "
+                f"that as a bug"
+                + (f". An adaptive model that learns the distribution gets "
+                   f"nearly all of it: knowing it in advance is only worth "
+                   f"{floor['agreed_ratio']:.5f}x, because these counts cost "
+                   f"just {floor['count_bits']:,.0f} bits to send against the "
+                   f"{saving:,.0f} they save"
+                   if cheap else
+                   f". Its {floor['agreed_ratio']:.5f}x 'agreed' floor is not "
+                   f"reachable: describing this distribution costs "
+                   f"{floor['count_bits']:,.0f} bits and knowing it saves only "
+                   f"{saving:,.0f}"))
+
         return {
             "label": label,
-            "suits": suits[label],
+            "suits": mechanisms[0],
+            "mechanisms": mechanisms,
             "wasted_low_bits": wasted,
             "locality": local,
+            "skew": bias,
+            "arrangement_ratio": floor["agreed_ratio"],
+            "discovered_ratio": floor["discovered_ratio"],
             **profile,
         }
 
@@ -617,6 +776,7 @@ class BinaryEntropy:
             1 for bit in register.get_individual_states() if not bit.is_superposition()
         )
         chosen_block, chosen_bits = BinaryEntropy.best_block_size(records, width)
+        floor = BinaryEntropy.arrangement_floor(records, width)
         return {
             "records": len(records),
             "width": width,
@@ -636,6 +796,12 @@ class BinaryEntropy:
                 records, width, block_size),
             "best_block_size": chosen_block,
             "best_block_bits": chosen_bits,
+            "symbol_entropy": BinaryEntropy.symbol_entropy(records),
+            "skew": BinaryEntropy.skew(records),
+            "arrangement_bits": floor["arrangement_bits"],
+            "count_bits": floor["count_bits"],
+            "agreed_ratio": floor["agreed_ratio"],
+            "discovered_ratio": floor["discovered_ratio"],
         }
 
     @staticmethod
@@ -676,6 +842,12 @@ class BinaryEntropy:
             f"  recurrence           median {gap}"
             + (f", {verdict['within_256']:.0%} within 256"
                if verdict["within_256"] else ""),
-            f"  == {verdict['label']} ==  {verdict['suits']}",
+            f"  skew                 {data['skew']:.1%} short of uniform "
+            f"({data['symbol_entropy']:.3f} bits/word from the counts alone)",
+            f"  combinatorial floor  {data['agreed_ratio']:.4f}x if the counts "
+            f"are agreed, {data['discovered_ratio']:.4f}x if they must be sent",
+            "",
+            f"  == {verdict['label']} ==",
         ]
+        lines.extend(f"     - {mechanism}" for mechanism in verdict["mechanisms"])
         return "\n".join(lines)

@@ -135,9 +135,39 @@ Everything above looks at bit *positions* — what a register can exploit. A
 second set of measurements looks at whole *words* — what a selector can:
 `vocabulary()` (deterministically ordered, because that ordering is what a
 selector indexes into), `word_frequencies()`, `recency_distances()` and
-`recency_profile()`. They disagree usefully. Text has 113 distinct bytes of
-which 95% recur within 256 places, yet only 8.5% locality — the bit lens finds
-almost nothing there and the word lens finds everything.
+`recency_profile()`. They disagree usefully. This README as bytes has 114
+distinct values of which 95% recur within 256 places, yet only 7.5% locality —
+the bit lens finds almost nothing there and the word lens finds everything.
+
+### What the counts alone permit
+
+A third question sits underneath both lenses: forget the order entirely, what
+do the *frequencies* allow? `skew()` says how far they fall short of uniform,
+and `arrangement_bits()` counts what is left once they are known —
+`log2(N!/∏cᵢ!)`, the number of distinct sequences with exactly these counts,
+below which no coder can go.
+
+Which sets up the trap this project keeps walking into from new directions.
+Perfectly balanced data really is constrained, and the constraint really is
+worth something — but only to someone who already knows about it:
+
+```python
+floor = BinaryEntropy.arrangement_floor(records, width=8)
+floor["agreed_ratio"]       # -> 1.00259x   knowing the counts saves 1,354 bits
+floor["discovered_ratio"]   # -> 0.99800x   sending them costs 2,405
+```
+
+Random 16-bit noise is starker: a tempting 1.2599x agreed against 0.9966x
+actually reachable. The two terms are the same quantity in different clothes,
+so they very nearly cancel — which is why `classify()` quotes the reachable
+figure first and names the other as unreachable when it is. A constraint pays
+only when it is *shared*, never when it has to be transmitted.
+
+The same function generalises a number this project used to hardcode: a
+permutation is just the extreme case where every count is one, and its famous
+ceiling falls straight out.
+
+### The map
 
 `classify()` puts a stream on the map and says which mechanisms suit it:
 
@@ -168,6 +198,14 @@ be argued with. The pair worth noticing is ordered versus shuffled enumeration:
 *identical* to the word lens — same vocabulary, nothing ever recurring — and
 told apart by locality alone, one being the best case we measured all project
 and the other provably hopeless.
+
+The advice is derived from the measurements rather than looked up per label,
+because two streams can share a label and want opposite mechanisms. Prose is
+29% skewed and 7.5% local, so it is told to code by frequency and nothing
+else; a drifting sensor signal is 3% skewed and 35% local and told the
+reverse. Real music reads *both* — values cluster near zero and near their
+neighbours — and is correctly told both, which is what FLAC already does:
+predict, then Rice-code the residuals by frequency.
 
 Both lenses have blind spots, which is why there are two. A counter whose every
 bit varies looks like pure noise to the bit lens and is trivially predictable; a
@@ -299,7 +337,7 @@ Standard library only — nothing to install:
 python -m unittest
 ```
 
-213 tests. The GUI tests drive real Tk widgets and skip themselves
+318 tests. The GUI tests drive real Tk widgets and skip themselves
 automatically where there's no display.
 
 ## License

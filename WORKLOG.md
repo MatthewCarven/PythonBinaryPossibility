@@ -3,6 +3,97 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-09 — The word lens, the map, and what the counts alone permit
+
+A design session that stayed in design deliberately. Matthew is sketching a
+custom four-branch packet tree (00 original / 01 repeated / 10 possibility /
+11 exotic) and wants data generators to seed from it, so the question became:
+what does `BinaryEntropy` have to be able to *tell* a generator before any of
+that can be designed? Three rounds of work came out of it.
+
+**Round one — a second lens.** Everything the module measured looked at bit
+*positions*, which is what a register can exploit. A selector exploits whole
+*words*, and the two disagree usefully. Added `vocabulary()` (with `first` /
+`frequency` / `value` orderings, deterministic because that ordering is
+exactly what a selector indexes into), `word_frequencies()`,
+`recency_distances()`, `recurrence_rate()`, `recency_profile()` and
+`vocabulary_growth()`, then `classify()` to put a stream on a map.
+
+The pair that justifies having two lenses: **ordered and shuffled enumeration
+are identical to the word lens** — same vocabulary, nothing ever recurring,
+indistinguishable — and locality alone separates them. One is the best case
+measured all project (18x) and the other is provably hopeless.
+
+**Round two — measuring balance.** Matthew's observation: *"even white noise
+is compressible — a perfect random sequence is just complete even completion
+of counts."* Correct, and worth building, because it names a real floor that
+was previously hardcoded for one case. Added `symbol_entropy()`, `skew()`,
+`arrangement_bits()` (`log2(N!/prod c_i!)` — the information left in the
+ordering once the counts are known), `count_bits()` (the price of *telling*
+the decoder those counts) and `arrangement_floor()` reporting both.
+
+**The finding, and it is the project's oldest lesson in a new hat.** Exactly
+balanced bytes really do constrain the ordering: the `agreed` floor sits at
+1.00259x on 64 KB, saving 1,354 bits, and that is not a rounding error. But
+pinning the counts down costs 2,405 bits, so a self-contained file comes out
+*larger* — 0.99800x. Random 16-bit noise is starker still: a tempting
+1.2599x agreed against 0.9966x discovered, 67,104 bits to send versus 66,016
+saved. The two terms are the same quantity wearing different clothes (the
+classic `(A-1)/2 * log2(N)` universal-coding redundancy), which is why they
+so nearly cancel. **A constraint pays only when it is shared, never when it
+has to be transmitted** — the fourth appearance of that rule this project,
+after the seed discussion, the trit's 58.5% register overhead, and the
+persistent-model result.
+
+It also generalises a number `randomness_demo.py` had been estimating via
+Stirling: a permutation is just the extreme where every count is one, and its
+famous ceiling falls straight out (1.0991x for 16-bit values, tested against
+the demo's approximation).
+
+**Round three — advice derived, not looked up.** `classify()` originally
+carried one canned recommendation per label, which is wrong: two streams can
+share a label and want opposite mechanisms. So `mechanisms` is now assembled
+from the measurements — strip padding, frequency-code, distance/move-to-front,
+predict-and-persist — and `suits` is simply the first of them.
+
+Prose reads 27% skewed and 8.8% local, so it gets frequency coding and
+nothing else. A drifting sensor signal reads 3% skewed and 35% local and gets
+the opposite. Real music, checked against Matthew's take rather than assumed,
+reads **both** — 30% skewed and 47% local — because sample values cluster
+near zero *and* near their neighbours. Its advice is correctly both, which is
+what FLAC already does: predict, then Rice-code the residuals by frequency.
+I had written the entry claiming music was barely skewed and the measurement
+disagreed; the number quoted here is the measured one.
+
+**A length-dependence, found while checking that.** `skew()` divides by the
+alphabet *observed*, so a short excerpt has not met its rare values yet and
+reads low — the same 120k excerpt of the vocal take reads 0.189 where the
+full 700k reads 0.301, and its label moves SYMBOLIC -> STRUCTURED -> ANALOG
+as more of the song arrives. The direction is the safe one (it understates
+the opportunity and converges upward), and it is now documented and tested
+rather than left to bite later. The depth detector got exactly this wrong in
+the *unsafe* direction back on 08-06, which is why it earned a test.
+
+**Decisions**
+- `SKEWED = 0.15` as the frequency-coding threshold, from the corpus rather
+  than invented, like every other threshold here.
+- The `INCOMPRESSIBLE` advice quotes the *discovered* ratio first and names
+  the agreed one as unreachable when it is. It only credits the agreed figure
+  where the alphabet is small enough that stating the distribution is genuinely
+  cheap — a two-symbol stream's bias costs ~18 bits and can be worth
+  thousands. Leading with the optimistic number would have been the kind of
+  overselling `randomness_demo.py` exists to prevent.
+- `report()` and `describe()` carry the new measurements; `describe()` now
+  lists every mechanism rather than just the first.
+
+**Tests** 294 -> 317, all green, pyflakes clean.
+
+**Handoff to meatthread0**
+- Push when happy.
+- The generator design is now unblocked: `vocabulary(order=...)` gives a
+  deterministic word list to seed from, and `arrangement_floor()` says what
+  any generator is allowed to claim.
+
 ## 2026-08-06 — Real music in the corpus; two conclusions revised
 
 Matthew dropped in a 3.5-minute vocal take (44.1 kHz stereo, decoded from a

@@ -8,6 +8,12 @@ from BinaryEntropy import BinaryEntropy
 from BinaryPossibility import BinaryRegister
 
 
+def sample_text(size: int = 60000) -> list:
+    """Real English prose, as bytes — the stand-in for the text corpus."""
+    with open("README.md", "rb") as handle:
+        return list((handle.read() * 2)[:size])
+
+
 class TestRegisterFromStream(unittest.TestCase):
     def test_recovers_known_structure(self):
         # Top two bits pinned to 1, bottom two free and even.
@@ -329,6 +335,153 @@ class TestWordLens(unittest.TestCase):
         self.assertEqual(BinaryEntropy.vocabulary_growth([]), [])
 
 
+class TestSymbolStatistics(unittest.TestCase):
+    """Order-0 statistics: what the counts alone say, before any ordering."""
+
+    def test_uniform_alphabet_has_full_entropy_and_no_skew(self):
+        records = list(range(256)) * 40
+        self.assertAlmostEqual(BinaryEntropy.symbol_entropy(records), 8.0)
+        self.assertAlmostEqual(BinaryEntropy.skew(records), 0.0)
+
+    def test_a_constant_stream_is_wholly_skewed(self):
+        self.assertEqual(BinaryEntropy.symbol_entropy([7] * 500), 0.0)
+        self.assertEqual(BinaryEntropy.skew([7] * 500), 1.0)
+
+    def test_empty_stream_is_defined(self):
+        self.assertEqual(BinaryEntropy.symbol_entropy([]), 0.0)
+
+    def test_prose_is_skewed_and_a_drifting_signal_is_not(self):
+        """The measurement the advice split turns on.
+
+        English letter frequencies are famously uneven. A signal that
+        wanders across its whole range visits values almost evenly and is
+        compressible for a different reason entirely — one number tells
+        them apart. (Real music is *both*, and correctly gets both pieces
+        of advice; it is not the counterexample here.)
+        """
+        text = sample_text()
+        rng = random.Random(5)
+        value, drifting = 30000, []
+        for _ in range(20000):
+            value = max(0, min(65535, value + rng.randint(-60, 60)))
+            drifting.append(value)
+        self.assertGreater(BinaryEntropy.skew(text), BinaryEntropy.SKEWED)
+        self.assertLess(BinaryEntropy.skew(drifting), BinaryEntropy.SKEWED)
+
+    def test_skew_converges_from_below_as_a_stream_lengthens(self):
+        """Length-dependence, pinned down rather than left to bite later.
+
+        The denominator is the alphabet *observed*, so a short excerpt has
+        not met its rare values yet and reads low. The direction is the
+        safe one — it understates the opportunity and grows towards the
+        truth — but a previous detector in this project got exactly this
+        wrong in the other direction, so it is worth a test.
+        """
+        rng = random.Random(8)
+        # Values clustered near zero: a stand-in for sampled audio, whose
+        # rare loud values only show up in a long enough excerpt.
+        stream = [min(255, int(abs(rng.gauss(0, 20)))) for _ in range(60000)]
+        readings = [BinaryEntropy.skew(stream[:n])
+                    for n in (2000, 10000, 60000)]
+        self.assertLess(readings[0], readings[-1])
+        self.assertLessEqual(readings[0], readings[1])
+
+    def test_skew_never_leaves_its_range(self):
+        rng = random.Random(6)
+        for records in ([1, 2], [0] * 9 + [1], [rng.getrandbits(8)
+                                               for _ in range(4000)]):
+            self.assertGreaterEqual(BinaryEntropy.skew(records), 0.0)
+            self.assertLessEqual(BinaryEntropy.skew(records), 1.0)
+
+
+class TestArrangementFloor(unittest.TestCase):
+    """The combinatorial floor — and the price of the counts that set it."""
+
+    def test_arrangement_of_a_constant_stream_is_zero(self):
+        # One arrangement exists, so the ordering carries no information.
+        self.assertAlmostEqual(BinaryEntropy.arrangement_bits([3] * 100), 0.0)
+
+    def test_a_permutation_costs_log2_of_n_factorial(self):
+        records = list(range(1000))
+        self.assertAlmostEqual(
+            BinaryEntropy.arrangement_bits(records),
+            math.log2(math.factorial(1000)),
+            places=6,
+        )
+
+    def test_order_does_not_change_it(self):
+        # It is a function of the counts alone — which is exactly why it is
+        # a floor and not a measurement of this particular sequence.
+        records = [0, 0, 1, 2, 2, 2, 3]
+        shuffled = list(records)
+        random.Random(9).shuffle(shuffled)
+        self.assertAlmostEqual(BinaryEntropy.arrangement_bits(records),
+                               BinaryEntropy.arrangement_bits(shuffled))
+
+    def test_repeats_are_cheaper_than_distinct_values(self):
+        distinct = BinaryEntropy.arrangement_bits(list(range(64)))
+        repeated = BinaryEntropy.arrangement_bits(list(range(8)) * 8)
+        self.assertLess(repeated, distinct)
+
+    def test_count_bits_matches_the_exact_combination(self):
+        records, width = [0, 1, 1, 0, 1], 2
+        self.assertAlmostEqual(
+            BinaryEntropy.count_bits(records, width),
+            math.log2(math.comb(len(records) + 4 - 1, 4 - 1)),
+            places=9,
+        )
+
+    def test_count_bits_grows_with_the_alphabet(self):
+        records = list(range(256)) * 4
+        narrow = BinaryEntropy.count_bits(records, 8)
+        wide = BinaryEntropy.count_bits(records, 16)
+        self.assertGreater(wide, narrow)
+
+    def test_reproduces_the_hardcoded_permutation_ceiling(self):
+        """The figure randomness_demo.py estimates via Stirling, computed.
+
+        That demo prints the best-possible ratio for a permutation of every
+        16-bit value from an approximation. Doing it from real counts should
+        land in the same place, which is the point of generalising it.
+        """
+        records = list(range(65536))
+        floor = BinaryEntropy.arrangement_floor(records, 16)
+        stirling = 65536 * 16 - 65536 * math.log2(math.e)
+        self.assertAlmostEqual(floor["agreed_ratio"],
+                               65536 * 16 / stirling, places=4)
+
+    def test_the_agreed_floor_is_never_the_reachable_one(self):
+        rng = random.Random(11)
+        records = [rng.getrandbits(8) for _ in range(20000)]
+        floor = BinaryEntropy.arrangement_floor(records, 8)
+        self.assertGreater(floor["discovered"], floor["agreed"])
+        self.assertLess(floor["discovered_ratio"], floor["agreed_ratio"])
+        self.assertAlmostEqual(floor["discovered"],
+                               floor["agreed"] + floor["count_bits"])
+
+    def test_balanced_counts_promise_a_win_and_do_not_deliver_it(self):
+        """The whole reason both figures are reported.
+
+        Exactly-even counts really do constrain the ordering — the agreed
+        floor sits above 1.0x and it is not a rounding error. But the
+        counts that pin it down cost more to send than the constraint
+        saves, so a self-contained file ends up *larger*. A constraint only
+        pays when it is shared, never when it has to be transmitted.
+        """
+        records = []
+        for value in range(256):
+            records.extend([value] * 256)
+        random.Random(13).shuffle(records)
+        floor = BinaryEntropy.arrangement_floor(records, 8)
+        self.assertGreater(floor["agreed_ratio"], 1.0)
+        self.assertLess(floor["discovered_ratio"], 1.0)
+
+    def test_empty_stream_is_defined(self):
+        floor = BinaryEntropy.arrangement_floor([], 8)
+        self.assertEqual(floor["raw_bits"], 0.0)
+        self.assertEqual(floor["arrangement_bits"], 0.0)
+
+
 class TestClassify(unittest.TestCase):
     """The decision tree, checked against the streams it was derived from."""
 
@@ -360,8 +513,7 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(second["label"], "INCOMPRESSIBLE")
 
     def test_text_is_symbolic(self):
-        blob = (open("README.md", "rb").read() * 2)[:60000]
-        verdict = BinaryEntropy.classify(list(blob), 8)
+        verdict = BinaryEntropy.classify(sample_text(), 8)
         self.assertEqual(verdict["label"], "SYMBOLIC")
         # and the bit lens finds almost nothing here, which is the point
         self.assertLess(verdict["locality"], 0.20)
@@ -395,3 +547,93 @@ class TestClassify(unittest.TestCase):
         text = BinaryEntropy.describe(list(range(1000)), 16, name="counter")
         self.assertIn("vocabulary", text)
         self.assertIn("ENUMERATED", text)
+
+
+class TestDerivedMechanisms(unittest.TestCase):
+    """Advice comes from the measurements, not from the label.
+
+    Two streams can share a label and want opposite mechanisms, which is
+    why the advice is derived rather than looked up. Text and audio are the
+    pair that forced it.
+    """
+
+    @staticmethod
+    def _text():
+        return sample_text()
+
+    @staticmethod
+    def _audio():
+        rng = random.Random(4)
+        value, records = 30000, []
+        for _ in range(20000):
+            value = max(0, min(65535, value + rng.randint(-60, 60)))
+            records.append(value)
+        return records
+
+    def test_skewed_streams_are_told_to_code_by_frequency(self):
+        joined = " ".join(BinaryEntropy.classify(self._text(), 8)["mechanisms"])
+        self.assertIn("frequency coding", joined)
+
+    def test_local_streams_are_told_to_predict_instead(self):
+        joined = " ".join(BinaryEntropy.classify(self._audio(), 16)["mechanisms"])
+        self.assertIn("predict and cancel", joined)
+        self.assertNotIn("frequency coding", joined)
+
+    def test_the_two_lenses_recommend_different_things(self):
+        """The check that matters: neither stream gets the other's advice."""
+        text = BinaryEntropy.classify(self._text(), 8)
+        audio = BinaryEntropy.classify(self._audio(), 16)
+        self.assertNotEqual(text["mechanisms"], audio["mechanisms"])
+        self.assertGreater(text["skew"], audio["skew"])
+        self.assertGreater(audio["locality"], text["locality"])
+
+    def test_padding_advice_comes_first_and_alone_matters(self):
+        records = [(v << 8) for v in range(1, 3000)]
+        mechanisms = BinaryEntropy.classify(records, 16)["mechanisms"]
+        self.assertIn("dead low bits", mechanisms[0])
+        self.assertEqual(mechanisms[0],
+                         BinaryEntropy.classify(records, 16)["suits"])
+
+    def test_a_stream_with_nothing_to_offer_is_given_its_floor(self):
+        rng = random.Random(1)
+        records = [rng.getrandbits(16) for _ in range(20000)]
+        verdict = BinaryEntropy.classify(records, 16)
+        self.assertEqual(verdict["mechanisms"], [verdict["suits"]])
+        self.assertIn("no mechanism above threshold", verdict["suits"])
+        self.assertLess(verdict["discovered_ratio"], 1.0)
+
+    def test_an_unreachable_floor_is_named_as_unreachable(self):
+        """Wide alphabet: the counts cost more to send than they save."""
+        records = []
+        for value in range(256):
+            records.extend([value] * 256)
+        random.Random(17).shuffle(records)
+        advice = BinaryEntropy.classify(records, 8)["suits"]
+        self.assertIn("not reachable", advice)
+
+    def test_a_reachable_floor_is_credited_to_an_adaptive_model(self):
+        """Two symbols: stating the bias costs ~18 bits and saves thousands.
+
+        The same sentence has to serve both cases honestly, so the branch
+        that decides between them is worth pinning down.
+        """
+        rng = random.Random(3)
+        records = [1 if rng.random() < 0.40 else 0 for _ in range(200000)]
+        verdict = BinaryEntropy.classify(records, 1)
+        self.assertLess(verdict["skew"], BinaryEntropy.SKEWED)
+        self.assertIn("adaptive model", verdict["suits"])
+        self.assertNotIn("not reachable", verdict["suits"])
+        self.assertGreater(verdict["discovered_ratio"], 1.0)
+
+    def test_every_verdict_carries_at_least_one_mechanism(self):
+        rng = random.Random(23)
+        streams = [
+            (list(range(4096)), 16),
+            ([rng.getrandbits(8) for _ in range(4096)], 8),
+            (list(range(64)) * 64, 16),
+            ([9] * 400, 8),
+        ]
+        for records, width in streams:
+            verdict = BinaryEntropy.classify(records, width)
+            self.assertTrue(verdict["mechanisms"])
+            self.assertEqual(verdict["suits"], verdict["mechanisms"][0])
