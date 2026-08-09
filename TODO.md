@@ -3,6 +3,11 @@
 Surfaced tasks and future ideas. Tick things off or strike them out; add
 freely.
 
+Work that is decided lives here. Work that is still *thinking* lives in
+[ideas.md](ideas.md) — the four-branch packet tree, the generator sketches,
+and the tangents worth keeping. An item graduates from there to here when
+somebody has measured enough to know what building it would mean.
+
 ## Planned threads
 
 Two pieces of work large enough to have their own design docs. Detailed
@@ -33,14 +38,20 @@ checklists live in the plans; only the headline sits here.
       `symbol_entropy()`, `arrangement_bits()`, `count_bits()` and
       `arrangement_floor()`. Balanced data's agreed floor is real and
       unreachable; the counts cost about what knowing them saves.
-- [ ] **Data generators, now unblocked.** `vocabulary(order=...)` gives a
+- [ ] **Write the generators** (next session). `vocabulary(order=...)` gives a
       deterministic word list to seed from and `arrangement_floor()` bounds
-      what any of them may claim. Next design conversation.
-- [ ] **Decide whether `skew()` should also report against the full width.**
-      It currently divides by the alphabet *observed*, answering "given the
-      values that occur, are they uneven?". Dividing by `2**width` would
-      fold in the unused range as well. Both are meaningful; a second key
-      rather than a change would probably be right.
+      what any of them may claim. Sketches, verdicts and the admission test
+      are in [ideas.md](ideas.md#generators) — the bar is *lowers the
+      residual against the predictor already there*, not *is interesting*.
+- [ ] **More `BinaryEntropy`** (next session). Open questions collected in
+      [ideas.md](ideas.md#open-questions-for-binaryentropy): the `skew()`
+      denominator, `classify()`'s labels moving with excerpt length, whether
+      the exhaustion-aware coder belongs in a module that measures, and the
+      fact that nothing yet sees cross-position structure.
+- [ ] **Build the benchmark grid** before adding data classes. The harness
+      varies one axis; every new idea lives on a second one. Design and the
+      five experiments that fill it are in
+      [ideas.md](ideas.md#the-benchmark-grid-designed-not-built).
 - [x] ~~Re-run the benchmark against real music~~ — done 2026-08-06 with
       Matthew's vocal take. Predict-and-cancel beat gzip/lzma/bz2 by 20-55%;
       the three describers tied within 1%; FLAC still won by 15-18%.

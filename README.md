@@ -40,6 +40,13 @@ is both:
 | `bench.py` | all of the above, clickable |
 | `randomness_demo.py` | the limits of all of it, demonstrated not claimed |
 
+Four documents carry the rest: `WORKLOG.md` for what happened and why,
+`TODO.md` for what is next, `PLAN-probability.md` and `PLAN-compression.md`
+for the two threads large enough to have their own design docs, and
+[`ideas.md`](ideas.md) for everything thought but not yet built — where each
+number is tagged *measured* or *asserted* so a half-formed idea can be parked
+without quietly becoming a claim.
+
 ## Registers and groups — `BinaryPossibility.py`
 
 ```python
