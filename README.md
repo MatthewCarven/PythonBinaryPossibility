@@ -129,9 +129,50 @@ designs. Across the whole corpus, prediction turns local structure into
 stationary structure — which means predicting first and persisting afterwards
 are complements, not alternatives.
 
-It also **sees one kind of structure only**: a counter whose every bit varies
-looks like pure noise to it, and is in fact trivially predictable. A low reading
-is real; a high one only means this particular lens found nothing.
+### Two lenses, and a map
+
+Everything above looks at bit *positions* — what a register can exploit. A
+second set of measurements looks at whole *words* — what a selector can:
+`vocabulary()` (deterministically ordered, because that ordering is what a
+selector indexes into), `word_frequencies()`, `recency_distances()` and
+`recency_profile()`. They disagree usefully. Text has 113 distinct bytes of
+which 95% recur within 256 places, yet only 8.5% locality — the bit lens finds
+almost nothing there and the word lens finds everything.
+
+`classify()` puts a stream on the map and says which mechanisms suit it:
+
+```
+dead low bits?
+ +-- yes -> PADDED           strip them first; nothing else means anything
+ \-- no
+     words ever recur?
+      +-- no
+      |    has locality?
+      |     +-- yes -> ENUMERATED     nothing to select, everything to predict
+      |     \-- no  -> INCOMPRESSIBLE neither lens sees anything
+      \-- yes
+           small vocabulary AND near gaps?
+            +-- yes -> SYMBOLIC       selector territory (text lives here)
+            \-- no
+                near gaps?
+                 +-- yes -> STRUCTURED  both levers work
+                 \-- no
+                     has locality?
+                      +-- yes -> ANALOG         predict, then persist
+                      \-- no  -> INCOMPRESSIBLE white noise
+```
+
+Every threshold comes from measurements on the benchmark corpus rather than
+being invented, and the verdict carries its evidence so a surprising answer can
+be argued with. The pair worth noticing is ordered versus shuffled enumeration:
+*identical* to the word lens — same vocabulary, nothing ever recurring — and
+told apart by locality alone, one being the best case we measured all project
+and the other provably hopeless.
+
+Both lenses have blind spots, which is why there are two. A counter whose every
+bit varies looks like pure noise to the bit lens and is trivially predictable; a
+low reading from either is real, a high one only means *that* lens found
+nothing.
 
 ## Possibility trees — `binarypossibilitytrees.py`
 

@@ -205,6 +205,123 @@ class BinaryEntropy:
             count += 1
         return count
 
+    # --- The word lens ---
+    #
+    # Everything above looks at bit *positions*: what a register can
+    # exploit. These look at whole *words*: what a selector can. The two
+    # answer different questions and disagree usefully. Enumeration has
+    # perfect positional structure and no word ever recurs; text is the
+    # reverse, 113 distinct bytes of which 95% return within 256 places.
+
+    @staticmethod
+    def vocabulary(records: Sequence[int], order: str = "first") -> List[int]:
+        """The distinct words in the stream, deterministically ordered.
+
+        ``order`` picks the ordering, and the choice is not cosmetic -- it
+        is what a word *selector* would index into:
+
+        * ``"first"``   -- order of first appearance. Matches how a decoder
+          builds its dictionary while reading, so indices mean the same
+          thing on both sides.
+        * ``"frequency"`` -- commonest first, ties broken by value. Makes
+          the average selector index as small as possible.
+        * ``"value"``   -- numeric. Canonical, and independent of the data.
+        """
+        if order == "first":
+            seen, out = set(), []
+            for word in records:
+                if word not in seen:
+                    seen.add(word)
+                    out.append(word)
+            return out
+        if order == "value":
+            return sorted(set(records))
+        if order == "frequency":
+            counts = BinaryEntropy.word_frequencies(records)
+            return sorted(counts, key=lambda w: (-counts[w], w))
+        raise ValueError("order must be 'first', 'frequency' or 'value'.")
+
+    @staticmethod
+    def word_frequencies(records: Sequence[int]) -> Dict[int, int]:
+        """How often each distinct word appears."""
+        counts: Dict[int, int] = {}
+        for word in records:
+            counts[word] = counts.get(word, 0) + 1
+        return counts
+
+    @staticmethod
+    def recency_distances(records: Sequence[int]) -> List[int]:
+        """For each repeat, how far back the same word last appeared.
+
+        The measurement that decides whether a word-selector packet pays.
+        Short distances mean a selector index is a small number and codes
+        cheaply; a stream where nothing recurs yields an empty list and
+        tells you a selector has nothing to select.
+        """
+        last: Dict[int, int] = {}
+        gaps = []
+        for position, word in enumerate(records):
+            previous = last.get(word)
+            if previous is not None:
+                gaps.append(position - previous)
+            last[word] = position
+        return gaps
+
+    @staticmethod
+    def recurrence_rate(records: Sequence[int]) -> float:
+        """Share of words that have been seen before. 0.0 means never."""
+        if not records:
+            return 0.0
+        return len(BinaryEntropy.recency_distances(records)) / len(records)
+
+    @staticmethod
+    def recency_profile(records: Sequence[int]) -> Dict[str, float]:
+        """Summarise word recurrence: ``vocabulary``, ``recurrence_rate``,
+        ``median_gap``, ``within_16``, ``within_256``.
+
+        ``within_N`` is the share of repeats whose previous appearance was
+        no more than N places back -- directly, the hit rate of a selector
+        with an N-deep window.
+        """
+        gaps = BinaryEntropy.recency_distances(records)
+        vocabulary_size = len(set(records))
+        if not gaps:
+            return {
+                "vocabulary": vocabulary_size,
+                "recurrence_rate": 0.0,
+                "median_gap": math.inf,
+                "within_16": 0.0,
+                "within_256": 0.0,
+            }
+        ordered = sorted(gaps)
+        return {
+            "vocabulary": vocabulary_size,
+            "recurrence_rate": len(gaps) / len(records),
+            "median_gap": ordered[len(ordered) // 2],
+            "within_16": sum(1 for g in gaps if g <= 16) / len(gaps),
+            "within_256": sum(1 for g in gaps if g <= 256) / len(gaps),
+        }
+
+    @staticmethod
+    def vocabulary_growth(
+        records: Sequence[int], points: int = 8
+    ) -> List[Tuple[int, int]]:
+        """``(position, distinct words so far)`` at evenly spaced points.
+
+        Distinguishes a fixed alphabet, which flattens early, from an
+        ever-expanding one, which keeps climbing -- enumeration climbs
+        forever by construction and text stops almost immediately.
+        """
+        if not records or points <= 0:
+            return []
+        step = max(1, len(records) // points)
+        seen, out = set(), []
+        for position, word in enumerate(records, start=1):
+            seen.add(word)
+            if position % step == 0 or position == len(records):
+                out.append((position, len(seen)))
+        return out
+
     # --- Measuring ---
 
     @staticmethod
@@ -378,6 +495,106 @@ class BinaryEntropy:
             for index in range(width)
         ]
 
+    # --- Putting a stream on the map ---
+
+    #: Below this many distinct words, treat the alphabet as small enough
+    #: that a selector can address it directly. Text uses 113 of 65,536.
+    SMALL_VOCABULARY = 512
+
+    #: Above this share of words having been seen before, word-selection
+    #: has something to select. Enumeration scores 0.0 by construction.
+    RECURS = 0.30
+
+    #: A repeat this close is cheap to point at. Text's median gap is 14,
+    #: music's 38, drifting sensor readings 442.
+    NEAR_GAP = 64
+
+    #: Below this locality, no lens here has found anything: measuring in
+    #: windows tells you no more than measuring the whole stream. Real
+    #: music reads 0.60 and drifting sensors 0.41; white noise and a
+    #: shuffled permutation both read under 0.05.
+    STRUCTURELESS = 0.15
+
+    @staticmethod
+    def classify(
+        records: Sequence[int], width: int, block_size: int = 16
+    ) -> Dict[str, object]:
+        """Place a stream on the map, and say which mechanisms suit it.
+
+        The decision tree, with every threshold taken from measurements on
+        the benchmark corpus rather than invented::
+
+            dead low bits?
+             +-- yes -> PADDED           strip them first; nothing else is
+             |                           meaningful until you do
+             \\-- no
+                 words ever recur?   (recurrence > 0.30)
+                  +-- no
+                  |    has locality?  (> 0.15)
+                  |     +-- yes -> ENUMERATED     a selector has nothing to
+                  |     |                         select, but prediction has
+                  |     |                         everything. Best case found
+                  |     \\-- no  -> INCOMPRESSIBLE neither lens sees anything.
+                  |                                A shuffled permutation
+                  \\-- yes
+                       small vocabulary AND near gaps?
+                        +-- yes -> SYMBOLIC        selector territory: small
+                        |                          alphabet, constant reuse.
+                        |                          Where we lose to gzip
+                        \\-- no
+                            near gaps?
+                             +-- yes -> STRUCTURED both levers work; records
+                             |                     and telemetry live here
+                             \\-- no
+                                 has locality?
+                                  +-- yes -> ANALOG   recurrence is incidental;
+                                  |                   predict, then persist
+                                  \\-- no  -> INCOMPRESSIBLE  white noise
+
+        The two lenses are load-bearing in different places, which is the
+        point of having both. Ordered and shuffled enumeration are
+        *identical* to the word lens -- same vocabulary, nothing ever
+        recurring -- and only locality tells them apart, one being the best
+        case we have found and the other provably hopeless.
+
+        Returns the label plus the measurements it was decided on, so a
+        surprising answer can be argued with rather than just accepted.
+        """
+        profile = BinaryEntropy.recency_profile(records)
+        wasted = BinaryEntropy.wasted_low_bits(records, width)
+        local = BinaryEntropy.locality(records, width, block_size)
+        near = profile["median_gap"] <= BinaryEntropy.NEAR_GAP
+        small = profile["vocabulary"] <= BinaryEntropy.SMALL_VOCABULARY
+        structured = local > BinaryEntropy.STRUCTURELESS
+
+        if wasted:
+            label = "PADDED"
+        elif profile["recurrence_rate"] <= BinaryEntropy.RECURS:
+            label = "ENUMERATED" if structured else "INCOMPRESSIBLE"
+        elif small and near:
+            label = "SYMBOLIC"
+        elif near:
+            label = "STRUCTURED"
+        else:
+            label = "ANALOG" if structured else "INCOMPRESSIBLE"
+
+        suits = {
+            "PADDED": "strip the dead bits, then classify again",
+            "ENUMERATED": "prediction only -- no word ever repeats",
+            "SYMBOLIC": "word selector; a register finds little here",
+            "STRUCTURED": "both: predict, and select recurring words",
+            "ANALOG": "predict first, then persist the model",
+            "INCOMPRESSIBLE": "nothing found -- expect ~1.0x, and be suspicious "
+                              "of any model that claims better",
+        }
+        return {
+            "label": label,
+            "suits": suits[label],
+            "wasted_low_bits": wasted,
+            "locality": local,
+            **profile,
+        }
+
     @staticmethod
     def report(
         records: Sequence[int], width: int, block_size: int = 16
@@ -429,6 +646,9 @@ class BinaryEntropy:
         """A readable summary of :meth:`report`, ready to print."""
         data = BinaryEntropy.report(records, width, block_size)
         register = BinaryEntropy.register_from_stream(records, width)
+        verdict = BinaryEntropy.classify(records, width, block_size)
+        gap = ("never" if verdict["median_gap"] == math.inf
+               else f"{verdict['median_gap']:,} back")
         drift_per_record = data["drift_cost"] / max(1, data["records"])
         lines = [
             f"{name or 'stream'}: {data['records']:,} records x {data['width']} bits",
@@ -450,5 +670,12 @@ class BinaryEntropy:
             f"  -> prefers           "
             f"{'persistent' if data['prefers_persistent'] else 'per-block'} "
             f"models, at block size {data['best_block_size']}",
+            "",
+            f"  vocabulary           {verdict['vocabulary']:,} distinct words, "
+            f"{verdict['recurrence_rate']:.1%} of them seen before",
+            f"  recurrence           median {gap}"
+            + (f", {verdict['within_256']:.0%} within 256"
+               if verdict["within_256"] else ""),
+            f"  == {verdict['label']} ==  {verdict['suits']}",
         ]
         return "\n".join(lines)

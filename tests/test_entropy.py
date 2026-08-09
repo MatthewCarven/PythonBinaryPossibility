@@ -274,3 +274,124 @@ class TestBlockSizeSearch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWordLens(unittest.TestCase):
+    """Whole words, rather than bit positions — what a *selector* can use."""
+
+    def test_vocabulary_orderings_are_deterministic(self):
+        records = [5, 1, 5, 9, 1, 1]
+        self.assertEqual(BinaryEntropy.vocabulary(records, "first"), [5, 1, 9])
+        self.assertEqual(BinaryEntropy.vocabulary(records, "value"), [1, 5, 9])
+        self.assertEqual(BinaryEntropy.vocabulary(records, "frequency"), [1, 5, 9])
+
+    def test_frequency_ties_break_on_value(self):
+        self.assertEqual(
+            BinaryEntropy.vocabulary([9, 9, 2, 2, 7], "frequency"), [2, 9, 7])
+
+    def test_rejects_unknown_ordering(self):
+        with self.assertRaises(ValueError):
+            BinaryEntropy.vocabulary([1, 2], "vibes")
+
+    def test_word_frequencies(self):
+        self.assertEqual(BinaryEntropy.word_frequencies([3, 3, 8]), {3: 2, 8: 1})
+
+    def test_recency_distances_measure_the_gap(self):
+        self.assertEqual(BinaryEntropy.recency_distances([1, 2, 1, 1]), [2, 1])
+
+    def test_a_stream_with_no_repeats_yields_no_gaps(self):
+        self.assertEqual(BinaryEntropy.recency_distances(list(range(50))), [])
+        self.assertEqual(BinaryEntropy.recurrence_rate(list(range(50))), 0.0)
+
+    def test_recency_profile_on_a_tight_alphabet(self):
+        records = [i % 4 for i in range(400)]
+        profile = BinaryEntropy.recency_profile(records)
+        self.assertEqual(profile["vocabulary"], 4)
+        self.assertEqual(profile["median_gap"], 4)
+        self.assertEqual(profile["within_16"], 1.0)
+
+    def test_profile_of_a_norepeat_stream_reports_infinite_gap(self):
+        profile = BinaryEntropy.recency_profile(list(range(50)))
+        self.assertEqual(profile["median_gap"], math.inf)
+        self.assertEqual(profile["within_256"], 0.0)
+
+    def test_vocabulary_growth_flattens_on_a_fixed_alphabet(self):
+        growth = BinaryEntropy.vocabulary_growth([i % 10 for i in range(800)])
+        self.assertEqual(growth[-1][1], 10)
+        self.assertEqual(growth[0][1], growth[-1][1])   # flat from the start
+
+    def test_vocabulary_growth_climbs_forever_on_enumeration(self):
+        growth = BinaryEntropy.vocabulary_growth(list(range(800)))
+        self.assertLess(growth[0][1], growth[-1][1])
+        self.assertEqual(growth[-1][1], 800)
+
+    def test_growth_handles_empty(self):
+        self.assertEqual(BinaryEntropy.vocabulary_growth([]), [])
+
+
+class TestClassify(unittest.TestCase):
+    """The decision tree, checked against the streams it was derived from."""
+
+    def test_padding_is_caught_before_anything_else(self):
+        records = [(v << 8) for v in range(1, 3000)]
+        self.assertEqual(BinaryEntropy.classify(records, 16)["label"], "PADDED")
+
+    def test_ordered_enumeration(self):
+        # nothing ever recurs, but measuring locally sees straight through it
+        verdict = BinaryEntropy.classify(list(range(8192)), 16)
+        self.assertEqual(verdict["label"], "ENUMERATED")
+        self.assertEqual(verdict["recurrence_rate"], 0.0)
+
+    def test_shuffled_enumeration_is_told_apart_by_locality_alone(self):
+        """The pair the word lens cannot separate, and locality can.
+
+        Same vocabulary, same total absence of recurrence — identical to a
+        selector. One is the best case measured all project (18x) and the
+        other is provably hopeless, and only the bit lens knows which.
+        """
+        ordered = list(range(8192))
+        shuffled = list(ordered)
+        random.Random(42).shuffle(shuffled)
+        first = BinaryEntropy.classify(ordered, 16)
+        second = BinaryEntropy.classify(shuffled, 16)
+        self.assertEqual(first["vocabulary"], second["vocabulary"])
+        self.assertEqual(first["recurrence_rate"], second["recurrence_rate"])
+        self.assertEqual(first["label"], "ENUMERATED")
+        self.assertEqual(second["label"], "INCOMPRESSIBLE")
+
+    def test_text_is_symbolic(self):
+        blob = (open("README.md", "rb").read() * 2)[:60000]
+        verdict = BinaryEntropy.classify(list(blob), 8)
+        self.assertEqual(verdict["label"], "SYMBOLIC")
+        # and the bit lens finds almost nothing here, which is the point
+        self.assertLess(verdict["locality"], 0.20)
+
+    def test_white_noise_is_incompressible(self):
+        rng = random.Random(1)
+        records = [rng.getrandbits(16) for _ in range(20000)]
+        verdict = BinaryEntropy.classify(records, 16)
+        self.assertEqual(verdict["label"], "INCOMPRESSIBLE")
+
+    def test_a_drifting_signal_is_analog(self):
+        rng = random.Random(2)
+        value, records = 30000, []
+        for _ in range(20000):
+            value = max(0, min(65535, value + rng.randint(-60, 60)))
+            records.append(value)
+        self.assertEqual(BinaryEntropy.classify(records, 16)["label"], "ANALOG")
+
+    def test_a_constant_stream_reads_as_all_padding(self):
+        # Every position is dead, so PADDED fires and its advice -- strip
+        # them and classify again -- correctly leaves nothing behind.
+        self.assertEqual(BinaryEntropy.classify([42] * 500, 16)["label"], "PADDED")
+
+    def test_verdict_carries_its_evidence(self):
+        verdict = BinaryEntropy.classify(list(range(2000)), 16)
+        for key in ("label", "suits", "vocabulary", "recurrence_rate",
+                    "median_gap", "locality", "wasted_low_bits"):
+            self.assertIn(key, verdict)
+
+    def test_describe_reports_the_verdict(self):
+        text = BinaryEntropy.describe(list(range(1000)), 16, name="counter")
+        self.assertIn("vocabulary", text)
+        self.assertIn("ENUMERATED", text)
