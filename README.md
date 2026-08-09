@@ -110,13 +110,28 @@ reg                       # BinaryRegister('11??')  — recovered from the data
 reg.entropy()             # 2.0 bits of real information per 4 stored
 ```
 
-Two things the numbers will tell you if you let them. **Measure locally** —
-over a long stream nearly every bit position moves *somewhere*, so a whole-stream
-register drifts towards all-`?` and says nothing; `blocked_registers()` looks
-within windows, which is usually where structure actually lives. And **this sees
-one kind of structure only**: a counter whose every bit varies looks like pure
-noise to it, and is in fact trivially predictable. A low reading is real; a high
-one only means this particular lens found nothing.
+Beyond entropy it measures four things, each of which exists because getting it
+wrong cost real time: `wasted_low_bits()` finds dead padding at the bottom of
+every record (a 16-bit master exported as 32-bit PCM is half nothing, and
+byte-oriented compressors exploit that for free); `locality()` reports how much
+of the apparent uncertainty is merely an artefact of averaging over the whole
+stream; `drift_cost()` says what a model would pay for carrying its
+probabilities across block boundaries instead of resetting them; and
+`best_block_size()` searches for the window that describes a stream most
+cheaply, register overhead included.
+
+Two rules the numbers will teach you. **Measure locally** — over a long stream
+nearly every bit position moves *somewhere*, so a whole-stream register drifts
+towards all-`?` and says nothing. And **measure what the coder will see, not
+what the file contains**: the same music reads 9.599 bits/record of drift as raw
+samples and 0.325 as residuals, and those two numbers recommend opposite
+designs. Across the whole corpus, prediction turns local structure into
+stationary structure — which means predicting first and persisting afterwards
+are complements, not alternatives.
+
+It also **sees one kind of structure only**: a counter whose every bit varies
+looks like pure noise to it, and is in fact trivially predictable. A low reading
+is real; a high one only means this particular lens found nothing.
 
 ## Possibility trees — `binarypossibilitytrees.py`
 

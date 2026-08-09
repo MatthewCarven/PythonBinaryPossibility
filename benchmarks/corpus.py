@@ -30,6 +30,8 @@ import struct
 import wave
 from typing import List, Optional, Sequence
 
+from BinaryEntropy import BinaryEntropy
+
 #: Real recorded audio that ships with LibreOffice on most Linux boxes.
 #: Varied on purpose: percussive, tonal, noisy, natural, applause.
 SYSTEM_AUDIO_DIR = "/usr/lib/libreoffice/share/gallery/sounds"
@@ -65,24 +67,11 @@ MAX_ZERO_LOW_BYTE = 0.10
 def wasted_low_bits(records: Sequence[int], width: int) -> int:
     """How many low bit positions are zero in every record.
 
-    Audio mixed at one depth and exported at a wider one carries dead bits
-    at the bottom -- a 16-bit master saved as 32-bit PCM is half padding.
-    FLAC strips these for free via its ``wasted_bits_per_sample`` field, so
-    any honest comparison has to notice them too.
+    Thin alias for :meth:`BinaryEntropy.wasted_low_bits` -- this is a
+    measurement about a stream, so the library owns it and the benchmark
+    borrows it rather than keeping a second copy to drift out of sync.
     """
-    if not records:
-        return 0
-    combined = 0
-    for record in records:
-        combined |= record
-        if combined & 1:
-            return 0
-    if combined == 0:
-        return width
-    count = 0
-    while count < width and not (combined >> count) & 1:
-        count += 1
-    return count
+    return BinaryEntropy.wasted_low_bits(records, width)
 
 
 def effective_depth(records: Sequence[int], width: int = 16) -> tuple:

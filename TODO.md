@@ -38,10 +38,12 @@ checklists live in the plans; only the headline sits here.
 - [ ] **Strip wasted bits before residual coding.** The 32-bit file is 16-bit
       audio in a 32-bit box; FLAC strips the dead half for free and reads
       7.60x against our 2.53x. Cheap, mechanical, and most of that gap.
-- [ ] **Make per-block-vs-persistent a per-block choice**, alongside the
-      register/bit-tree hybrid. Persistence gains 5-6% on stationary music
-      and loses 45% where zigzag makes dead bits sign-correlated. Neither
-      wins everywhere, and the encoder already knows enough to pick.
+- [~] **Make per-block-vs-persistent a per-block choice** — partly answered
+      2026-08-09. `BinaryEntropy.drift_cost()` measures it directly, and
+      across the corpus prediction turns local structure into stationary
+      structure, so *predict then persist* is the default and per-block is
+      the fallback where prediction fails. Still worth wiring the choice in
+      per block for the cases where it does fail.
 - [ ] **Reconsider zigzag for data with dead low bits** — zigzag(-65536) sets
       all sixteen low bits, converting dead positions into sign-correlated
       ones. Sign-magnitude or stripping first would avoid it.

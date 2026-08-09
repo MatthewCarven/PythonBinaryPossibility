@@ -150,5 +150,127 @@ class TestHonestLimits(unittest.TestCase):
         self.assertLess(blocked / len(records), 5.0)
 
 
+class TestDeadBits(unittest.TestCase):
+    def test_dead_positions_found(self):
+        # top two bits always 0, bottom two vary
+        records = [(i & 0b0011) for i in range(400)]
+        self.assertEqual(BinaryEntropy.dead_positions(records, 4), [0, 1])
+        self.assertEqual(BinaryEntropy.effective_width(records, 4), 2)
+
+    def test_constant_stream_is_entirely_dead(self):
+        self.assertEqual(BinaryEntropy.effective_width([5] * 50, 8), 0)
+
+    def test_wasted_low_bits_spots_padding(self):
+        # 16-bit audio exported into a 32-bit box
+        records = [(v << 16) for v in range(1, 5000)]
+        self.assertEqual(BinaryEntropy.wasted_low_bits(records, 32), 16)
+
+    def test_no_wasted_bits_when_the_bottom_moves(self):
+        self.assertEqual(BinaryEntropy.wasted_low_bits([1, 2, 4], 16), 0)
+
+    def test_all_zero_stream_is_entirely_wasted(self):
+        self.assertEqual(BinaryEntropy.wasted_low_bits([0, 0], 16), 16)
+
+    def test_one_counts_are_most_significant_first(self):
+        self.assertEqual(BinaryEntropy.one_counts([0b10], 2), [1, 0])
+
+
+class TestLocality(unittest.TestCase):
+    def test_independent_noise_has_no_locality(self):
+        rng = random.Random(1)
+        records = [rng.getrandbits(12) for _ in range(4000)]
+        self.assertLess(BinaryEntropy.locality(records, 12), 0.10)
+
+    def test_a_slow_signal_is_far_more_local_than_noise(self):
+        """The claim worth pinning is comparative, not a magic threshold.
+
+        Real music measures ~60% locality and a bounded random walk ~31%,
+        so an absolute bar is a number picked from one sample. That a slow
+        signal is dramatically more local than white noise is the property
+        the module actually relies on.
+        """
+        rng = random.Random(2)
+        value, walk = 30000, []
+        for _ in range(4000):
+            value = max(0, min(65535, value + rng.randint(-40, 40)))
+            walk.append(value)
+        noise = [rng.getrandbits(16) for _ in range(4000)]
+        self.assertGreater(BinaryEntropy.locality(walk, 16),
+                           BinaryEntropy.locality(noise, 16) * 3)
+
+    def test_locality_of_a_constant_stream_is_zero(self):
+        self.assertEqual(BinaryEntropy.locality([7] * 100, 8), 0.0)
+
+
+class TestDrift(unittest.TestCase):
+    def test_stationary_stream_barely_drifts(self):
+        rng = random.Random(3)
+        records = [rng.getrandbits(8) for _ in range(4000)]
+        self.assertLess(BinaryEntropy.drift_cost(records, 8) / 4000, 1.0)
+
+    def test_the_sign_correlated_trap_drifts_hard(self):
+        """Locally certain, globally a coin flip -- persistence's worst case."""
+        records = []
+        for index in range(4000):
+            sign = 0 if (index // 64) % 2 == 0 else 0xFF
+            records.append(sign)
+        per_record = BinaryEntropy.drift_cost(records, 8) / 4000
+        self.assertGreater(per_record, 4.0)
+        self.assertFalse(BinaryEntropy.prefers_persistent_model(records, 8))
+
+    def test_drift_is_never_negative(self):
+        rng = random.Random(4)
+        for width in (4, 8):
+            records = [rng.getrandbits(width) for _ in range(500)]
+            self.assertGreaterEqual(
+                BinaryEntropy.drift_cost(records, width), -1e-6)
+
+    def test_prediction_changes_the_answer(self):
+        """The usage rule, pinned: drift belongs to the stream AS CODED.
+
+        A wandering signal drifts hard as raw values and barely at all as
+        deltas, and those two readings recommend opposite designs. Measured
+        on real music this is 9.599 vs 0.325 bits/record.
+        """
+        value, raw = 30000, []
+        rng = random.Random(5)
+        for _ in range(4000):
+            value = max(0, min(65535, value + rng.randint(-60, 60)))
+            raw.append(value)
+        deltas = [raw[0]] + [raw[i] - raw[i - 1] for i in range(1, len(raw))]
+        zig = [(d << 1) ^ (d >> 63) if d < 0 else (d << 1) for d in deltas]
+        width = max(1, max(v.bit_length() for v in zig))
+        self.assertGreater(
+            BinaryEntropy.drift_cost(raw, 16) / len(raw),
+            BinaryEntropy.drift_cost(zig, width) / len(zig),
+        )
+
+
+class TestBlockSizeSearch(unittest.TestCase):
+    def test_returns_one_of_the_candidates(self):
+        records = list(range(2000))
+        size, bits = BinaryEntropy.best_block_size(records, 16)
+        self.assertIn(size, (4, 8, 16, 32, 64, 128, 256))
+        self.assertGreater(bits, 0)
+
+    def test_large_blocks_win_on_a_stationary_stream(self):
+        # nothing local to exploit, so per-block register overhead dominates
+        rng = random.Random(6)
+        records = [rng.getrandbits(8) for _ in range(4000)]
+        size, _ = BinaryEntropy.best_block_size(records, 8)
+        self.assertGreaterEqual(size, 64)
+
+    def test_report_carries_the_new_measurements(self):
+        data = BinaryEntropy.report(list(range(1000)), 16)
+        for key in ("locality", "drift_cost", "prefers_persistent",
+                    "best_block_size", "wasted_low_bits", "effective_width"):
+            self.assertIn(key, data)
+
+    def test_describe_mentions_locality_and_drift(self):
+        text = BinaryEntropy.describe(list(range(500)), 16, name="counter")
+        self.assertIn("locality", text)
+        self.assertIn("drift", text)
+
+
 if __name__ == "__main__":
     unittest.main()
