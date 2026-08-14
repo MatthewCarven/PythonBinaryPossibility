@@ -2,8 +2,14 @@
 
 Status: **DESIGNED 2026-08-09. E3 RUN the same day — see `## E3, and what it
 changed` at the end. No kill criterion fired, but the design changed: `window`
-is now a first-class parameter, not an afterthought.** The class itself is
-still not built; `benchmarks/balance.py` holds the models E3 needed.
+is now a first-class parameter, not an afterthought. BUILT 2026-08-14:**
+`BinaryRandom.py`, with the three faces, `window`, and the escape as
+`charge(..., escape=True)`; the twelve tests plus E3 regressions live in
+`tests/test_binary_random.py`, `PsynthRack.collapse(balanced=True)` is the §9
+musical payoff, and `randomness_demo.py` gained the fifth demo. One deviation:
+v1 shipped with the bucket structure (E3 had already built and validated it in
+`benchmarks/balance.py`; the naive wall stays measured in §6's table and test
+10 guards it by wall clock). `WORKLOG.md` 2026-08-14 has the build notes.
 Siblings: [PLAN-probability.md](PLAN-probability.md) (built — supplies the
 weighting this leans on), [PLAN-compression.md](PLAN-compression.md) (Phase 1
 done — supplies the bar this has to clear).
@@ -351,11 +357,11 @@ Test 3 is the crown jewel and is modelled on the existing
 `2**entropy() == calculate_possibility_count()` identity, which memory records as
 the most valuable test in the codebase.
 
-- [ ] **1. Balance invariant.** After any number of draws at any `order`,
+- [x] **1. Balance invariant.** After any number of draws at any `order`,
       `max(counts) - min(counts) <= order`. Fuzz across widths and orders.
-- [ ] **2. Exhaustion.** At `order=1`, every `A` consecutive draws is a
+- [x] **2. Exhaustion.** At `order=1`, every `A` consecutive draws is a
       permutation of the alphabet — `sorted(chunk) == list(range(A))`.
-- [ ] **3. THE IDENTITY.** At `order=1` and `n = R*A`,
+- [x] **3. THE IDENTITY.** At `order=1` and `n = R*A`,
       `charge(stream) == R * log2(A!)` **exactly, to floating point**, for every
       stream the generator can emit. It holds because `|eligible|` at step `i` of
       a round is `A - (i mod A)` regardless of path, so every path has the same
@@ -365,12 +371,12 @@ the most valuable test in the codebase.
       A=4/8/16 — and `log2((8!)^3) == 3*log2(8!)` confirms the charge really is
       the log of the number of streams the generator could have emitted, not a
       coincidence of arithmetic.
-- [ ] **4. The determinism guard.** At `order=1`, `entropy_rate()` matches
+- [x] **4. The determinism guard.** At `order=1`, `entropy_rate()` matches
       `log2(A!)/A` within Monte-Carlo tolerance, and two different rng seeds give
       different streams with identical counts. Catches §5a. **Measured:**
       2.765634 against a target of 2.765635 at A=16, and the two-seed case gives
       different streams with byte-identical count arrays.
-- [ ] **5. Kraft / completeness at `order > 1`.** The closed form of test 3 does
+- [x] **5. Kraft / completeness at `order > 1`.** The closed form of test 3 does
       not survive `order > 1` — `|eligible|` becomes path-dependent, so streams
       have unequal probabilities. **Measured:** at A=8, order=3, 24 draws, 200
       seeds produce **185 distinct charges spanning 56.6 to 71.6 bits** — a 15-bit
@@ -381,24 +387,24 @@ the most valuable test in the codebase.
       converges to the process entropy. **State this distinction in the
       docstring** — it is precisely the kind of thing that gets fudged into a
       false closed form.
-- [ ] **6. Degeneracy.** `order=inf` charges exactly `log2(A)` per symbol and its
+- [x] **6. Degeneracy.** `order=inf` charges exactly `log2(A)` per symbol and its
       output passes the same chi-squared check as `random.randrange`.
-- [ ] **7. Run and gap bounds.** At `order=1`: max run 2, max recency distance
+- [x] **7. Run and gap bounds.** At `order=1`: max run 2, max recency distance
       `2A-1`. Use `BinaryEntropy.recency_distances()` so the two modules agree.
-- [ ] **8. The spread curve.** Free-RNG spread scales as sqrt(N) across four
+- [x] **8. The spread curve.** Free-RNG spread scales as sqrt(N) across four
       decades within tolerance; `order=1` spread stays at 1 across all of them.
       Seeded, with a stated tolerance, since it is statistical.
-- [ ] **9. Cross-check against the shipped demo.** `ideal_bits(32, 1, 2**32)`
+- [x] **9. Cross-check against the shipped demo.** `ideal_bits(32, 1, 2**32)`
       implies 1.0472x, matching the number `randomness_demo.py` already prints.
       Computed from `lgamma`, not by enumerating 2^32 anything.
-- [ ] **10. Time bound.** `take(100_000)` at width 8 finishes in reasonable time.
+- [x] **10. Time bound.** `take(100_000)` at width 8 finishes in reasonable time.
       Naive `eligible()` is O(A) per draw, so width 16 is 65,536 operations per
       symbol — see the performance note below. Like the A* regression test, this
       one fails by **being slow**, not by erroring, so it needs an explicit
       wall-clock assertion or it will silently stop guarding anything.
-- [ ] **11. Empty and single-symbol alphabets.** `width=0` and `width=1` decided
+- [x] **11. Empty and single-symbol alphabets.** `width=0` and `width=1` decided
       deliberately and documented, in the spirit of the empty-register decision.
-- [ ] **12. Round-trip.** Same seed, same width, same order, same stream.
+- [x] **12. Round-trip.** Same seed, same width, same order, same stream.
 
 ### Performance note, since test 10 will find it
 
@@ -455,7 +461,7 @@ The generic-compressor claim is dead on arrival and should never be made.
 `ideas.md § The benchmark grid` wants generators as a row against the
 fixed-order row. Five, cheapest first:
 
-- [ ] **E1 — self-consistency.** Generate at `order=1`, charge with the matching
+- [x] **E1 — self-consistency.** Generate at `order=1`, charge with the matching
       model, confirm 1.2162x. Free, and it validates the harness.
 - [ ] **E2 — the order sweep against real describers.** Run the §2 dial through
       rice / register / bit-tree. **Asserted:** all three lose badly, because
@@ -463,7 +469,7 @@ fixed-order row. Five, cheapest first:
       exhaustion — the same reason gzip, lzma and bz2 all *expanded* the balanced
       file in the balance thread. If any describer does better than 1.00x, that
       is a genuinely surprising result and worth chasing.
-- [ ] **E3 — the local knife-edge.** Perturb `order=1` output by 2%, 5%, 10% and
+- [x] **E3 — the local knife-edge.** Perturb `order=1` output by 2%, 5%, 10% and
       re-charge. Globally, 2% destroyed three-quarters of the available bits.
       **Unknown locally**, and the more useful number by 69x. This is the
       experiment that decides whether the class is a curiosity or a component.

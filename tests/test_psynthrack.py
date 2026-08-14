@@ -413,3 +413,83 @@ class TestWeightedSteps(unittest.TestCase):
 
     def test_empty_rack_entropy_is_zero(self):
         self.assertEqual(PsynthRack().entropy(), 0.0)
+
+
+class TestBalancedCollapse(unittest.TestCase):
+    """collapse(balanced=True) -- the bag instead of the coin.
+
+    Measured 2026-08-09: an independent coin leaves one 16-step bar in
+    fifteen audibly lopsided; a width-1 order-1 RandomGeneratorPerfect
+    pins every bar to its share exactly.  The coin stays the default.
+    """
+
+    def one_track_rack(self, pattern):
+        return PsynthRack(Track(quiet_voice(), pattern), sample_rate=RATE)
+
+    def test_fair_bar_gets_exactly_half_its_hits(self):
+        rack = self.one_track_rack("?" * 16)
+        for seed in range(40):
+            (pattern,) = rack.collapse(seed=seed, balanced=True)
+            self.assertEqual(pattern.count("1"), 8)
+
+    def test_the_coin_still_clumps(self):
+        # The contrast that justifies the option: unbalanced collapses vary.
+        rack = self.one_track_rack("?" * 16)
+        hits = {rack.collapse(seed=s)[0].count("1") for s in range(40)}
+        self.assertGreater(len(hits), 1)
+
+    def test_odd_fair_count_lands_on_the_share_boundary(self):
+        rack = self.one_track_rack("?" * 5)
+        for seed in range(40):
+            (pattern,) = rack.collapse(seed=seed, balanced=True)
+            self.assertIn(pattern.count("1"), (2, 3))
+
+    def test_decided_steps_are_untouched(self):
+        rack = self.one_track_rack("10??10??")
+        for seed in range(10):
+            (pattern,) = rack.collapse(seed=seed, balanced=True)
+            self.assertEqual(pattern[0:2], "10")
+            self.assertEqual(pattern[4:6], "10")
+            self.assertTrue(all(c in "01" for c in pattern))
+
+    def test_weighted_steps_keep_their_own_odds(self):
+        rack = self.one_track_rack("?" * 8)
+        rack.tracks[0].set_step_probability(0, 1.0)
+        rack.tracks[0].set_step_probability(1, 0.0)
+        for seed in range(25):
+            (pattern,) = rack.collapse(seed=seed, balanced=True)
+            self.assertEqual(pattern[0], "1")
+            self.assertEqual(pattern[1], "0")
+            # The six remaining fair steps still get dealt exactly half.
+            self.assertEqual(pattern[2:].count("1"), 3)
+
+    def test_balanced_collapse_is_seeded_and_reproducible(self):
+        rack = self.one_track_rack("?" * 16)
+        self.assertEqual(
+            rack.collapse(seed=5, balanced=True),
+            rack.collapse(seed=5, balanced=True),
+        )
+        self.assertNotEqual(
+            rack.collapse(seed=5, balanced=True),
+            rack.collapse(seed=6, balanced=True),
+        )
+
+    def test_balanced_patterns_render(self):
+        rack = PsynthRack(
+            Track(quiet_voice("a"), "1?0?1?0?"),
+            Track(quiet_voice("b"), "????"),
+            sample_rate=RATE,
+        )
+        samples = rack.render(rack.collapse(seed=3, balanced=True))
+        self.assertTrue(all(-1.0 <= s <= 1.0 for s in samples))
+
+    def test_multi_track_racks_deal_each_track_its_own_bag(self):
+        rack = PsynthRack(
+            Track(quiet_voice("a"), "?" * 16),
+            Track(quiet_voice("b"), "?" * 16),
+            sample_rate=RATE,
+        )
+        for seed in range(10):
+            first, second = rack.collapse(seed=seed, balanced=True)
+            self.assertEqual(first.count("1"), 8)
+            self.assertEqual(second.count("1"), 8)

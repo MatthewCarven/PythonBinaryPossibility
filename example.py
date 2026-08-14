@@ -1,12 +1,16 @@
-"""Tour of PythonBinaryPossibility: registers, groups, trees, glitching, and sound.
+"""Tour of PythonBinaryPossibility: registers, groups, trees, glitching,
+sound, and balanced randomness.
 
 Run it with ``python example.py``. For the clickable version, ``python bench.py``.
 """
 
+import random
+
 from BinaryPossibility import BinaryRegister, BinaryRegisterGroup
 from binarypossibilitytrees import render_possibility_tree
 from BinaryGlitch import BinaryGlitch
-from PsynthRack import PsynthRack
+from BinaryRandom import RandomGeneratorPerfect
+from PsynthRack import PsynthRack, Track, Voice
 from BinaryEntropy import BinaryEntropy
 
 # ---------------------------------------------------------------
@@ -115,3 +119,25 @@ for take, seed in enumerate((1, 2, 3), start=1):
     filename = rack.write_wav(f"psynthrack_take{take}.wav", patterns)
     print(f"  take {take}: {patterns[2]}  ->  {filename}")
 print("Play those three files -- same pattern, three different songs.")
+
+# ---------------------------------------------------------------
+# 7. Balanced randomness: spending bits to buy evenness
+# ---------------------------------------------------------------
+print()
+print("A free coin clumps; RandomGeneratorPerfect deals from a bag instead:")
+bag = RandomGeneratorPerfect(width=2, order=1, rng=random.Random(6))
+stream = bag.take(12)
+print(f"  order=1 at width 2: {stream}")
+print(f"  every 4 draws is a permutation of 0..3, spread stays <= 1")
+bits = bag.charge(stream)
+print(f"  and describing those 12 draws costs exactly {bits:.4f} bits")
+print(f"  (3 rounds x log2(4!) -- the charge IS the process)")
+print()
+print("The same bag makes drum bars land evenly -- collapse(balanced=True):")
+bar = PsynthRack(Track(Voice("hat", frequency=8000.0, waveform="noise",
+                             decay=0.06), "?" * 16))
+coin_hits = [bar.collapse(seed=s)[0].count("1") for s in range(5)]
+bag_hits = [bar.collapse(seed=s, balanced=True)[0].count("1") for s in range(5)]
+print(f"  a 16-step bar, every step a fair ?:")
+print(f"  five coin collapses hit {coin_hits} times -- they wander")
+print(f"  five bag  collapses hit {bag_hits} times -- every bar, its share")

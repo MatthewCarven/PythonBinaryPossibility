@@ -3,6 +3,62 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-14 — BinaryRandom.py: the verified design, collected
+
+The one thread that was designed, experimentally verified and unbuilt is now
+built. New module `BinaryRandom.py`: `RandomGeneratorPerfect(width, order,
+window, rng)`, three faces on one counts array — generate / measure / charge —
+rng injected never owned, hard eligibility, `window` first-class per E3.
+39 tests in `tests/test_binary_random.py` (the plan's twelve plus the E3
+regressions); `PsynthRack.collapse(balanced=True)` deals fair steps from a
+width-1 order-1 bag (+8 tests); fifth demo (the balance dial) in
+`randomness_demo.py`; README and example tour updated. Suite 318 -> 365,
+green on 3.11 and on 3.10 (the device VM's version).
+
+**Cross-checked against E3's published numbers before anything else was
+written down.** Clean windowed ratio 1.2161x (E3: 1.2161x); 2% substitution
+1.1706x (inside E3's measured seed spread 1.1706–1.1728); counter mod 256
+1.2161x (E3: 1.2161x); `entropy_rate()` at A=16 2.765634 against the plan's
+2.765635; the width-32 exchange rate 1.442695 = log2(e) to 6 places. Test 3,
+the identity `charge == R*log2(A!)`, holds to 1e-9 across widths, seeds,
+partial rounds, and non-aligned windows.
+
+**One real bug, and it was the E3 lesson wearing implementation clothes.**
+First cut recomputed the minimum bucket when the low bucket emptied — BEFORE
+the drawn value landed in the next bucket — so `lo` could overshoot and the
+spread quietly breached `order` at order >= 2 (caught by test 1, invisible at
+order=1). `balance.py`'s `lo += 1` was correct all along, because the moved
+value itself guarantees the next bucket's occupancy. That is `min()` biting
+as a max-statistic for the second time in one thread; the fix carries a
+comment saying so.
+
+**Deviation from the plan's sequencing, recorded.** §Sequencing said build
+naive, let test 10 hit the wall, then bucket. E3 had already built and
+validated the bucket structure in `benchmarks/balance.py`, and the naive wall
+is already measured in the plan's table (507 s per 100k draws at width 16) —
+so v1 inherits the buckets rather than re-demonstrating the wall, and test 10
+stays as the wall-clock regression (100k draws at width 8 and 30k at width 16,
+failing by BEING SLOW, like the A* test).
+
+**The escape shipped as `charge(..., escape=True)`**, formula identical to
+E3's measured model (KT adaptive flag; no flag charged when everything is
+eligible, since a miss is impossible and both ends know it). The never-firing
+flag costs ~log2(N+1) bits total — E3's "15.99 bits over a whole 64 KB file"
+is log2(65537), which the regression test now pins. `escape=False` stays the
+default and `inf` on a miss stays documented v1 honesty, so the §6 identities
+survive untouched.
+
+**Balanced collapse semantics, decided.** Fair (p=0.5) undecided steps are
+dealt from one fresh bag per track per collapse — exactly the configuration
+E3 measured (sd 1.95 -> 0.00 on a 16-step bar). Weighted steps keep their own
+coin: a fair-share deal has no notion of a 20% symbol, and a ghost note's
+clumping is its point; the pool-model generalisation stays deferred. The coin
+stays the default — some users want the clumping.
+
+Not done here, still open: E4 (generator as predictor), the aged local
+frequency baseline for the audio row, likelihood rendering in the ASCII tree,
+a bench toggle for balanced collapse.
+
 ## 2026-08-09 (E3) — Local balance is not a knife-edge; the model was
 
 Ran E3 straight after writing `PLAN-generators.md`, because it was the one

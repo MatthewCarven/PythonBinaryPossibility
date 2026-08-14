@@ -7,7 +7,7 @@ particular kind of overselling -- that marking bits `?` is somehow a way
 to get data for free.  It isn't, and the honest thing is to be able to
 show why rather than say why.
 
-Four demonstrations, each of which prints numbers you can check:
+Five demonstrations, each of which prints numbers you can check:
 
 1. **A trit costs more than a bit.** Describing a possibility space is
    larger than describing a state in it. The `?` is never the saving.
@@ -18,6 +18,9 @@ Four demonstrations, each of which prints numbers you can check:
    not the same claim.
 4. **Order is the whole story.** The same bytes, in two arrangements, land
    at opposite ends of what any compressor can do.
+5. **The balance dial.** From counter to free RNG through
+   `RandomGeneratorPerfect` -- both ends are useless, for opposite
+   reasons, and evenness is bought with randomness at a computable rate.
 
 Standard library only.
 """
@@ -27,6 +30,8 @@ import lzma
 import math
 import random
 import struct
+
+from BinaryRandom import RandomGeneratorPerfect
 
 RULE = "─" * 68
 
@@ -138,6 +143,39 @@ def demo_order_is_everything(bits: int = 16) -> None:
     print("  decoder is already assumed to know. That IS compression.")
 
 
+def demo_balance_dial(n: int = 8192) -> None:
+    """The dial from counter to free RNG -- both ends useless, differently."""
+    heading(5, "Evenness is bought with randomness, and both ends are useless")
+    print("  RandomGeneratorPerfect draws so max(count) - min(count) never")
+    print("  exceeds `order`. It does not produce randomness -- it SPENDS")
+    print("  randomness to buy evenness, at an exactly computable rate.")
+    print()
+    print(f"  {'stream':<22}{'spent b/sym':>12}{'spread':>8}{'lzma':>9}")
+
+    def lzma_ratio(values):
+        raw = bytes(values)
+        return len(raw) / len(lzma.compress(raw, preset=9))
+
+    counter = [i % 256 for i in range(n)]
+    print(f"  {'counter mod 256':<22}{0.0:>12.4f}{0:>8}{lzma_ratio(counter):>8.2f}x")
+    for order in (1, 4, 16, None):
+        g = RandomGeneratorPerfect(8, order, rng=random.Random(1))
+        stream = g.take(n)
+        spent = g.charge(stream) / n
+        label = "free RNG" if order is None else f"order={order}"
+        print(f"  {label:<22}{spent:>12.4f}{g.spread:>8}{lzma_ratio(stream):>8.2f}x")
+    print()
+    print("  The counter end: perfectly even, zero randomness spent -- and")
+    print("  lzma flattens it, because a counter was never random at all.")
+    print("  The free end: fully random, no evenness anywhere on any day.")
+    print("  In between, evenness costs the gap up to 8.0000 bits/symbol,")
+    print(f"  converging to log2(e) = {math.log2(math.e):.4f} bits as symbols widen --")
+    print("  the same constant behind demo 4's permutation ceiling. And note")
+    print("  lzma EXPANDS the order=1 stream: balanced is not compressible,")
+    print("  and 'perfectly even' and 'random' are different claims at both")
+    print("  ends of the dial.")
+
+
 def main() -> None:
     print()
     print("  THE LIMITS")
@@ -147,6 +185,7 @@ def main() -> None:
     demo_counting_bound()
     demo_prng_paradox()
     demo_order_is_everything()
+    demo_balance_dial()
     print()
 
 

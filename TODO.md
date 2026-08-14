@@ -19,20 +19,20 @@ checklists live in the plans; only the headline sits here.
       demos of the hard limits.~~ **Done 2026-08-06.** Shipped
       `BinaryEntropy.py`, `randomness_demo.py`, weighted steps in the rack
       and odds controls in the bench. The compression thread is unblocked.
-- [ ] **[PLAN-generators.md](PLAN-generators.md)** — **designed 2026-08-09, not
-      built.** `RandomGeneratorPerfect` in a new `BinaryRandom.py`: a counts
-      array, an `order` (max permitted max-min spread), and a selector that
-      draws uniformly from the least-used values. Three faces on one array —
-      generate, measure a real stream's discrepancy, charge code lengths.
-      Goes first among the generators because its model is free: the decoder
-      rebuilds the histogram from what it already decoded, no seed, no side
-      channel. Headline findings: perfect balance costs **log2(e) = 1.4427
-      bits/symbol** whatever the alphabet (50% of a bit, 4.5% of a 32-bit
-      word — and it is the 1.0472x `randomness_demo.py` already prints), and
-      **balance measured locally is worth 69x balance measured globally**
-      (93,185 spare bits vs 1,354 on the same 64 KB). Eight of the twelve
-      tests already pass against a throwaway. The open question that decides
-      it all is E3.
+- [x] **[PLAN-generators.md](PLAN-generators.md)** — designed 2026-08-09,
+      **built 2026-08-14.** `RandomGeneratorPerfect` in `BinaryRandom.py`: a
+      counts array, an `order` (max permitted max-min spread), and a selector
+      that draws uniformly from the least-used values. Three faces on one
+      array — generate, measure a real stream's discrepancy, charge code
+      lengths. Goes first among the generators because its model is free: the
+      decoder rebuilds the histogram from what it already decoded, no seed, no
+      side channel. Headline findings: perfect balance costs **log2(e) =
+      1.4427 bits/symbol** whatever the alphabet (50% of a bit, 4.5% of a
+      32-bit word — and it is the 1.0472x `randomness_demo.py` already
+      prints), and **balance measured locally is worth 69x balance measured
+      globally** (93,185 spare bits vs 1,354 on the same 64 KB). E3 answered
+      the question that decided it all — *build it, with the window* — and it
+      is built with the window. E4 and the aged baseline remain below.
 - [~] **[PLAN-compression.md](PLAN-compression.md)** — **Phase 1 done
       2026-08-06**, no kill criteria triggered. `benchmarks/` reproduces it.
       Finding: the register is a bounded-memory approximation of an LZMA
@@ -43,7 +43,9 @@ checklists live in the plans; only the headline sits here.
 
 ## Next up
 
-- [ ] **Push the latest commit** (meatthread0 — Claude doesn't push).
+- [ ] **Push the BinaryRandom commit** (meatthread0 — Claude doesn't push).
+      The 2026-08-09 commit is confirmed pushed — main == origin/main checked
+      2026-08-14.
 - [x] ~~The word lens and `classify()`~~ — done 2026-08-09. `vocabulary()`,
       recency measures, and a decision tree whose thresholds all come from
       the corpus. Ordered vs shuffled enumeration are identical to the word
@@ -52,8 +54,8 @@ checklists live in the plans; only the headline sits here.
       `symbol_entropy()`, `arrangement_bits()`, `count_bits()` and
       `arrangement_floor()`. Balanced data's agreed floor is real and
       unreachable; the counts cost about what knowing them saves.
-- [~] **Write the generators** — first one designed 2026-08-09 in
-      [PLAN-generators.md](PLAN-generators.md); build `BinaryRandom.py` next.
+- [~] **Write the generators** — first one designed 2026-08-09, **built
+      2026-08-14** as [BinaryRandom.py](BinaryRandom.py).
       `vocabulary(order=...)` gives a deterministic word list to seed from and
       `arrangement_floor()` bounds what any of them may claim. Sketches,
       verdicts and the admission test are in [ideas.md](ideas.md#generators)
@@ -69,22 +71,26 @@ checklists live in the plans; only the headline sits here.
       degenerates to 1 of 256 at a 98% miss rate. Resetting counts per window
       fixes it. No kill criterion fired. `benchmarks/balance.py`,
       `python -m benchmarks.e3`.
-- [ ] **Build `BinaryRandom.py` — now with `window`.** `window` is a first-class
-      agreed parameter alongside `width` and `order`; it costs nothing to share
-      and it is the difference between 0% and 82%. Everything else in
-      [PLAN-generators.md](PLAN-generators.md) stands, including the twelve
-      tests and the exact identity at order=1.
+- [x] ~~**Build `BinaryRandom.py` — now with `window`.**~~ — done 2026-08-14.
+      The twelve tests plus the E3 regressions pass (365 total); the order=1
+      identity holds to 1e-9 across widths, seeds, partial rounds and
+      non-aligned windows; `charge(escape=True)` reproduces E3's model
+      exactly. The bucket structure came from `benchmarks/balance.py` rather
+      than naive-first — E3 had already built and validated it, and the naive
+      wall is measured in the plan. One finding: computing the new minimum
+      bucket before the moved value lands overshoots `lo` — `min()` as a
+      max-statistic, second appearance in this thread.
 - [ ] **Resolve the audio row with an AGED local frequency baseline.** The one
       number from E3 that is not trustworthy. Real audio reads +1.36 b/sym on
       residuals, but at a 43% miss rate the escape flag has become a hot/cold
       frequency split — the opposite of balance — and the reset-prior baseline
       it is measured against is over-smoothed on peaked data. Either a real win
       hiding in audio residuals or an artefact; currently unknown.
-- [ ] **Balanced steps in `PsynthRack.collapse()`, behind an option.** Measured
-      2026-08-09: one bar in fifteen currently collapses lopsided enough to hear
-      (3.18% of 16-step bars at <=4 hits, 3.70% at >=12; sd 1.95). A balanced
-      selector removes it entirely at 2.7656 bits/step against 1.0000 for a coin.
-      Keep the coin available — some users will want the clumping.
+- [x] ~~**Balanced steps in `PsynthRack.collapse()`, behind an option.**~~ —
+      done 2026-08-14: `collapse(balanced=True)` deals each track's fair steps
+      from a width-1 order-1 bag (sd 1.95 -> 0.00, measured semantics);
+      weighted steps keep their own coin, and the coin stays the default.
+      Still open below: a bench toggle for it.
 - [ ] **E4 (generator as predictor) is now the interesting one**, since
       enum/ordered at 32-bit is exactly the balance-constrained wide-symbol case
       where balance is cheapest (4.5% of the symbol, vs 17.8% at width 8).
@@ -136,6 +142,9 @@ checklists live in the plans; only the headline sits here.
 
 ## Psynthrack & bench (added 2026-08-06)
 
+- [ ] **Balanced-collapse toggle in the bench's Rack tab** — the library
+      option exists (`collapse(balanced=True)`); a checkbox beside Collapse
+      would expose it. GUI drives the library, no logic in the GUI.
 - [ ] **Live playback in the bench** — a Play button instead of save-then-open.
       Needs a non-stdlib audio backend (`sounddevice`/`pyaudio`), or
       `winsound.PlaySound` on Windows only, which *is* stdlib. Worth a look.

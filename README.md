@@ -37,12 +37,14 @@ is both:
 | `BinaryGlitch.py` | real bytes and text |
 | `BinaryEntropy.py` | nothing — it *measures* where the `?`s already are |
 | `PsynthRack.py` | steps in a drum pattern |
+| `BinaryRandom.py` | nothing — it *spends* randomness to buy evenness |
 | `bench.py` | all of the above, clickable |
 | `randomness_demo.py` | the limits of all of it, demonstrated not claimed |
 
-Four documents carry the rest: `WORKLOG.md` for what happened and why,
-`TODO.md` for what is next, `PLAN-probability.md` and `PLAN-compression.md`
-for the two threads large enough to have their own design docs, and
+The documents carry the rest: `WORKLOG.md` for what happened and why,
+`TODO.md` for what is next, `PLAN-probability.md`, `PLAN-compression.md`
+and `PLAN-generators.md` for the three threads large enough to have their
+own design docs, and
 [`ideas.md`](ideas.md) for everything thought but not yet built — where each
 number is tagged *measured* or *asserted* so a half-formed idea can be parked
 without quietly becoming a claim.
@@ -285,9 +287,44 @@ rack.write_wav("take2.wav", rack.collapse(seed=2))  # same pattern, different so
 `collapse()` flips a coin per undecided step rather than enumerating, so it
 works even when the rack holds more songs than you could ever render. When the
 space *is* small enough to walk, `iter_variants()` streams every one of them.
+And because independent coins clump — about one 16-step bar in fifteen comes
+out audibly lopsided — `collapse(balanced=True)` deals the fair steps from a
+bag instead (the same reason Tetris deals pieces from a bag), pinning every
+bar to its share exactly while weighted steps keep their own odds.
 
 Synthesis is `math` and output is `wave` — five waveforms, pitch sweeps, decay
 envelopes, and soft-clipping on the mix bus, with nothing to install.
+
+## Spending randomness — `BinaryRandom.py`
+
+`RandomGeneratorPerfect` does not produce randomness. It *spends* randomness
+to buy evenness, at an exactly computable exchange rate — a low-discrepancy
+generator whose `order` bounds how far apart the value counts may ever drift
+(`order=1` is a strict shuffle-bag: every 256 bytes it emits is a permutation
+of all 256 values).
+
+```python
+import random
+from BinaryRandom import RandomGeneratorPerfect
+
+g = RandomGeneratorPerfect(width=8, order=1, rng=random.Random(42))
+g.take(6)              # six draws; no value repeats before all 256 appear
+g.spread               # max(counts) - min(counts): never exceeds order
+g.profile()            # is a stream balanced, free, or structured?
+g.charge(stream)       # bits to describe a stream under the balance model
+```
+
+Three faces share one counts array: **generate** (draw balanced values),
+**measure** (fold a real stream in and compare its spread to what a free RNG
+would show), and **charge** (price a stream in bits, the way a decoder
+would — at `order=1`, exactly `log2(256!)` per round, an identity the tests
+hold to 1e-9). The rng is injected, never owned, and the `window` parameter
+resets the counts periodically — measured to be the difference between
+recovering 0% and 82% of the model's value on imperfect data. Perfect balance
+costs `log2(e) ≈ 1.443` bits per symbol however wide the symbol, which is
+50% of a bit but only 4.5% of a 32-bit word — the design doc
+(`PLAN-generators.md`) has the tables, and `randomness_demo.py` runs the
+whole dial from counter to free RNG.
 
 ## Click it instead — `bench.py`
 
@@ -330,8 +367,10 @@ Possibility spaces invite a particular kind of overselling — that marking bits
 say so: a trit costs 1.585 bits, so a register is 58.5% *larger* than the string
 it describes; at most 1 in 2^(k−1) strings can be compressed by k bits; 120KB of
 noise that gzip and lzma both make *bigger* comes from a 68-byte line of Python;
-and the same bytes in two different orders sit at opposite ends of what any
-compressor can do.
+the same bytes in two different orders sit at opposite ends of what any
+compressor can do; and the balance dial runs from a counter (perfectly even,
+not random at all) to a free RNG (fully random, never even), with evenness
+priced in bits of spent randomness everywhere in between.
 
 The `?`s never save anything by themselves. Every win comes from a model both
 ends already agree on, and the bits simply move into that model.
@@ -344,7 +383,7 @@ Standard library only — nothing to install:
 python -m unittest
 ```
 
-318 tests. The GUI tests drive real Tk widgets and skip themselves
+365 tests. The GUI tests drive real Tk widgets and skip themselves
 automatically where there's no display.
 
 ## License

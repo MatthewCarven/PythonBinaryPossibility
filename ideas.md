@@ -155,6 +155,11 @@ deterministic — that ordering is what a generator seeds from and what a
 selector indexes into. Four sketches were checked against the counting bound,
 and they land very differently.
 
+*(The balanced generator graduated: designed in
+[PLAN-generators.md](PLAN-generators.md) 2026-08-09, E3-verified the same
+day, built 2026-08-14 as `BinaryRandom.py`. The sketches below stay for the
+three generators that have not.)*
+
 ### Invert k words ago — free, already covered
 
 **Asserted.** Inversion is XOR with all-ones, and MASKED is a reference plus
