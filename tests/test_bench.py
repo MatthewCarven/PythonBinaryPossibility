@@ -41,9 +41,8 @@ class BenchTestCase(unittest.TestCase):
             child for child in self.app.winfo_children()
             if isinstance(child, ttk.Notebook)
         ][0]
-        self.register_bench, self.glitch_bench, self.rack_bench = (
-            notebook.winfo_children()[:3]
-        )
+        (self.register_bench, self.glitch_bench, self.rack_bench,
+         self.random_bench) = notebook.winfo_children()[:4]
 
     def tearDown(self):
         self.app.destroy()
@@ -289,3 +288,94 @@ class TestRackBenchOdds(BenchTestCase):
         rack.tracks[0].set_step_probability(0, 0.15)
         samples = rack.render(rack.collapse(seed=1))
         self.assertTrue(all(-1.0 <= s <= 1.0 for s in samples))
+
+
+class TestRandomBench(BenchTestCase):
+    """The coin-vs-bag race drives RandomGeneratorPerfect and nothing else."""
+
+    def test_draw_advances_both_sides_equally(self):
+        self.random_bench.draw(16)
+        self.assertEqual(self.random_bench.free_gen.profile()["n"], 16)
+        self.assertEqual(self.random_bench.bag_gen.profile()["n"], 16)
+        self.assertIn("n=16", self.random_bench.free_side["stats"].cget("text"))
+
+    def test_bag_respects_the_order_dial(self):
+        self.random_bench.draw(256)
+        self.assertLessEqual(self.random_bench.bag_gen.spread, 1)
+        self.assertGreaterEqual(self.random_bench.free_gen.spread,
+                                self.random_bench.bag_gen.spread)
+
+    def test_spent_meter_shows_the_exchange_rate_exactly(self):
+        # Width 4, order 1: the identity makes the meter exact per round.
+        import math
+        self.random_bench.draw(256)  # 16 full rounds of A=16
+        free_rate = self.random_bench.spent["free"] / 256
+        bag_rate = self.random_bench.spent["bag"] / 256
+        self.assertAlmostEqual(free_rate, 4.0, places=9)
+        self.assertAlmostEqual(
+            bag_rate, math.lgamma(17) / math.log(2) / 16, places=9)
+        self.assertIn("/draw", self.random_bench.bag_side["spent"].cget("text"))
+
+    def test_reconfigure_restarts_the_race(self):
+        self.random_bench.draw(64)
+        self.random_bench.order_var.set(4)
+        self.random_bench.reconfigure()
+        self.assertEqual(self.random_bench.draws, 0)
+        self.assertEqual(self.random_bench.spent, {"free": 0.0, "bag": 0.0})
+        self.assertEqual(sum(self.random_bench.bag_gen.counts), 0)
+        self.assertIn("order=4", self.random_bench.bag_side["box"].cget("text"))
+
+    def test_same_seed_same_race(self):
+        self.random_bench.draw(64)
+        first = list(self.random_bench.bag_gen.counts)
+        self.random_bench.reconfigure()
+        self.random_bench.draw(64)
+        self.assertEqual(self.random_bench.bag_gen.counts, first)
+
+    def test_histogram_draws_a_mark_per_value(self):
+        self.random_bench.draw(16)
+        for side in (self.random_bench.free_side, self.random_bench.bag_side):
+            marks = side["canvas"].find_all()
+            # A bars (or zero-ticks) plus the baseline.
+            self.assertGreaterEqual(len(marks), self.random_bench.bag_gen.A + 1)
+
+    def test_width_dial_is_clamped(self):
+        self.random_bench.width_var.set(99)
+        self.random_bench.reconfigure()
+        self.assertEqual(self.random_bench.width_var.get(), 6)
+        self.assertEqual(self.random_bench.bag_gen.A, 64)
+
+    def test_verdicts_come_from_the_library(self):
+        self.random_bench.draw(4096)
+        self.assertIn("balance-constrained",
+                      self.random_bench.bag_side["stats"].cget("text"))
+        self.assertIn("free",
+                      self.random_bench.free_side["stats"].cget("text"))
+
+
+class TestRackBalancedCheckbox(BenchTestCase):
+    def _make_all_fair(self):
+        for track in self.rack_bench.rack.tracks:
+            for index in range(len(track)):
+                track.set_step(index, None)
+                track.set_step_probability(index, 0.5)
+
+    def test_balanced_deal_pins_every_track_to_its_share(self):
+        self._make_all_fair()
+        self.rack_bench.balanced_var.set(True)
+        for seed in range(8):
+            self.rack_bench.seed_var.set(seed)
+            for pattern in self.rack_bench._collapse():
+                self.assertEqual(pattern.count("1"), 8)
+
+    def test_unchecked_stays_the_coin(self):
+        self._make_all_fair()
+        self.rack_bench.balanced_var.set(False)
+        hits = set()
+        for seed in range(8):
+            self.rack_bench.seed_var.set(seed)
+            hits.update(p.count("1") for p in self.rack_bench._collapse())
+        self.assertGreater(len(hits), 1)
+
+    def test_checkbox_defaults_off(self):
+        self.assertFalse(self.rack_bench.balanced_var.get())

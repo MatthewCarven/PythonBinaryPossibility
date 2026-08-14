@@ -43,9 +43,9 @@ checklists live in the plans; only the headline sits here.
 
 ## Next up
 
-- [ ] **Push the BinaryRandom commit** (meatthread0 — Claude doesn't push).
-      The 2026-08-09 commit is confirmed pushed — main == origin/main checked
-      2026-08-14.
+- [ ] **Push the BinaryRandom and bench commits** (meatthread0 — Claude
+      doesn't push). The 2026-08-09 commit is confirmed pushed — main ==
+      origin/main checked 2026-08-14.
 - [x] ~~The word lens and `classify()`~~ — done 2026-08-09. `vocabulary()`,
       recency measures, and a decision tree whose thresholds all come from
       the corpus. Ordered vs shuffled enumeration are identical to the word
@@ -142,9 +142,11 @@ checklists live in the plans; only the headline sits here.
 
 ## Psynthrack & bench (added 2026-08-06)
 
-- [ ] **Balanced-collapse toggle in the bench's Rack tab** — the library
-      option exists (`collapse(balanced=True)`); a checkbox beside Collapse
-      would expose it. GUI drives the library, no logic in the GUI.
+- [x] ~~**Balanced-collapse toggle in the bench's Rack tab**~~ — done
+      2026-08-14, same day it was filed: a 'balanced' checkbox beside
+      Collapse → .wav. And the **Random tab** landed with it — the
+      coin-vs-bag race with width/order dials and a live spent-bits meter
+      that reads the order=1 identity exactly.
 - [ ] **Live playback in the bench** — a Play button instead of save-then-open.
       Needs a non-stdlib audio backend (`sounddevice`/`pyaudio`), or
       `winsound.PlaySound` on Windows only, which *is* stdlib. Worth a look.
@@ -168,6 +170,12 @@ checklists live in the plans; only the headline sits here.
 
 - [ ] Packaging: `pyproject.toml` + package folder so it's pip-installable.
       Deliberately skipped for now to keep the flat layout recognisable.
+- [ ] **Likelihood rendering in the possibility tree** — branch odds
+      annotations/weights in `binarypossibilitytrees.py`; the probability
+      thread's one unfinished item, and step 1 of
+      [ideas.md § The dynamic tree](ideas.md#the-dynamic-tree--regenerate-the-render-as-the-data-arrives).
+      Steps 2–3 (the generator's round tree; the dynamic rebuild) wait for
+      Phase 2 per the sketch.
 - [ ] Tree export formats: Mermaid / Graphviz output alongside ASCII, so
       trees can go in docs.
 - [ ] GitHub Action running `python -m unittest` on push.

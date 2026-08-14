@@ -332,14 +332,17 @@ whole dial from counter to free RNG.
 python bench.py
 ```
 
-Three tabs, one gesture: click any cell to cycle it `0 → 1 → ? → 0`.
+Four tabs, one gesture: click any cell to cycle it `0 → 1 → ? → 0`.
 
 - **Register** — a row of bits, with its live possibility count, its tree, and
   every state it can reach.
 - **Glitch** — type text, superpose a few of its bits, read every string it
   could decode to.
 - **Rack** — the step sequencer above, as a grid you can play. Collapse it
-  straight to a `.wav`.
+  straight to a `.wav` — with a `balanced` checkbox for the bag-dealt version.
+- **Random** — the coin-vs-bag race. A free coin and a balanced generator fill
+  twin histograms from the same seed; watch the coin's spread wander while the
+  bag's stays pinned, with a live meter of the randomness being spent.
 
 The GUI holds no possibility logic of its own — it drives the same classes your
 scripts do, so what you see is what you get.
@@ -383,7 +386,7 @@ Standard library only — nothing to install:
 python -m unittest
 ```
 
-365 tests. The GUI tests drive real Tk widgets and skip themselves
+376 tests. The GUI tests drive real Tk widgets and skip themselves
 automatically where there's no display.
 
 ## License

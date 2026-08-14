@@ -4,7 +4,7 @@ Run it with::
 
     python bench.py
 
-Three benches, one idea.  Everywhere you see a cell you can click it, and
+Four benches, one idea.  Everywhere you see a cell you can click it, and
 every click cycles the same three states::
 
     0  ->  1  ->  ?  ->  0
@@ -18,6 +18,9 @@ once, and worth a doubling of the possibility space.
   string it could now decode to.
 * **Rack** -- a step sequencer where undecided steps mean undecided music.
   Collapse it and render the result to a .wav file.
+* **Random** -- the coin-vs-bag race. A free coin and a balanced generator
+  fill twin histograms from the same seed; watch the coin's spread wander
+  while the bag's stays pinned, and watch what the evenness costs.
 
 Standard library only: Tkinter for the windows, and the project's own
 modules for all the actual thinking.  This GUI holds no possibility logic
@@ -25,7 +28,9 @@ of its own -- it drives the real classes, so what you see here is exactly
 what your scripts will do.
 """
 
+import math
 import os
+import random
 import tkinter as tk
 from tkinter import filedialog, font, messagebox, simpledialog, ttk
 from itertools import islice
@@ -33,6 +38,7 @@ from itertools import islice
 from BinaryGlitch import BinaryGlitch
 from BinaryPossibility import BinaryRegister
 from binarypossibilitytrees import BinaryPossibilityTree
+from BinaryRandom import RandomGeneratorPerfect
 from PsynthRack import PsynthRack
 
 # --- Palette -------------------------------------------------------------
@@ -368,8 +374,11 @@ class RackBench(ttk.Frame):
             text="Each step is a bit: 0 silent, 1 hit, ? undecided. "
                  "Every ? doubles the number of songs this pattern holds.\n"
                  "Right-click a ? to set how often it fires — 0.2 makes a "
-                 "ghost note that turns up in a fifth of takes.",
+                 "ghost note that turns up in a fifth of takes. Tick "
+                 "'balanced' to deal the fair ?s evenly instead of "
+                 "coin-flipping them.",
             style="Hint.TLabel",
+            wraplength=930,
         ).pack(anchor="w")
 
         self.grid_frame = tk.Frame(self, bg=BG)
@@ -394,6 +403,11 @@ class RackBench(ttk.Frame):
         self.bpm_var = tk.IntVar(value=int(self.rack.bpm))
         ttk.Spinbox(controls, from_=40, to=220, textvariable=self.bpm_var,
                     width=5).pack(side="left", padx=(6, 18))
+
+        self.balanced_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(controls, text="balanced",
+                        variable=self.balanced_var).pack(side="left",
+                                                         padx=(0, 8))
 
         ttk.Button(controls, text="Collapse → .wav",
                    command=self.render).pack(side="left")
@@ -479,9 +493,14 @@ class RackBench(ttk.Frame):
             text += f" ({weighted} weighted)"
         self.count_label.configure(text=text)
 
+    def _collapse(self):
+        """One collapse at the bench's current seed and deal setting."""
+        return self.rack.collapse(seed=self.seed_var.get(),
+                                  balanced=self.balanced_var.get())
+
     def render(self) -> None:
         self.rack.bpm = float(self.bpm_var.get())
-        patterns = self.rack.collapse(seed=self.seed_var.get())
+        patterns = self._collapse()
         path = filedialog.asksaveasfilename(
             defaultextension=".wav",
             filetypes=[("WAV audio", "*.wav")],
@@ -502,8 +521,163 @@ class RackBench(ttk.Frame):
         )
 
 
+class RandomBench(ttk.Frame):
+    """The coin-vs-bag race: spending randomness to buy evenness.
+
+    Two histograms fill from the same seed -- a free coin on the left, a
+    `RandomGeneratorPerfect` on the right.  The GUI holds no balance logic:
+    the bag draws itself, `profile()` writes the verdicts, and the spent
+    meter is nothing but log2 of the eligible-set size the library reports
+    before each draw.
+    """
+
+    DRAW_SIZES = (1, 16, 256, 4096)
+    CANVAS_W = 400
+    CANVAS_H = 168
+
+    def __init__(self, parent):
+        super().__init__(parent, padding=14)
+
+        ttk.Label(
+            self,
+            text="A free coin clumps; the bag deals. Same seed, same number "
+                 "of draws — watch the spread. The bag does not make "
+                 "randomness: it SPENDS randomness to buy evenness, and the "
+                 "meter shows the exchange rate. Changing a dial restarts "
+                 "the race.",
+            style="Hint.TLabel",
+            wraplength=930,
+        ).pack(anchor="w")
+
+        controls = ttk.Frame(self)
+        controls.pack(anchor="w", pady=12)
+
+        ttk.Label(controls, text="Width").pack(side="left")
+        self.width_var = tk.IntVar(value=4)
+        ttk.Spinbox(controls, from_=1, to=6, textvariable=self.width_var,
+                    width=4, command=self.reconfigure).pack(side="left",
+                                                            padx=(6, 14))
+        ttk.Label(controls, text="Order").pack(side="left")
+        self.order_var = tk.IntVar(value=1)
+        ttk.Spinbox(controls, from_=1, to=256, textvariable=self.order_var,
+                    width=5, command=self.reconfigure).pack(side="left",
+                                                            padx=(6, 14))
+        ttk.Label(controls, text="Seed").pack(side="left")
+        self.seed_var = tk.IntVar(value=1)
+        ttk.Spinbox(controls, from_=0, to=9999, textvariable=self.seed_var,
+                    width=6, command=self.reconfigure).pack(side="left",
+                                                            padx=(6, 18))
+        for count in self.DRAW_SIZES:
+            ttk.Button(
+                controls, text=f"Draw ×{count}", width=10,
+                command=lambda c=count: self.draw(c),
+            ).pack(side="left", padx=(0, 6))
+        ttk.Button(controls, text="Reset", width=8,
+                   command=self.reconfigure).pack(side="left", padx=(8, 0))
+
+        panes = ttk.Frame(self)
+        panes.pack(fill="both", expand=True)
+        self.free_side = self._build_side(panes, " free coin ", left=True)
+        self.bag_side = self._build_side(panes, " the bag ", left=False)
+
+        self.reconfigure()
+
+    @property
+    def mono(self):
+        return self.master.master.mono_font
+
+    def _build_side(self, parent, title: str, left: bool) -> dict:
+        box = ttk.LabelFrame(parent, text=title, padding=8)
+        box.pack(side="left", fill="both", expand=True,
+                 padx=(0, 12) if left else 0)
+        canvas = tk.Canvas(box, width=self.CANVAS_W, height=self.CANVAS_H,
+                           bg=PANEL, highlightthickness=0)
+        canvas.pack(fill="both", expand=True)
+        stats = ttk.Label(box, text="", style="Hint.TLabel", wraplength=440)
+        stats.pack(anchor="w", pady=(6, 0))
+        spent = ttk.Label(box, text="", style="Count.TLabel", wraplength=440)
+        spent.pack(anchor="w")
+        return {"box": box, "canvas": canvas, "stats": stats, "spent": spent}
+
+    # --- The race ---
+
+    def reconfigure(self) -> None:
+        """(Re)start the race at the dialled width, order and seed."""
+        width = max(1, min(6, self.width_var.get()))
+        self.width_var.set(width)
+        order = max(1, min(256, self.order_var.get()))
+        self.order_var.set(order)
+        seed = self.seed_var.get()
+        self.free_gen = RandomGeneratorPerfect(
+            width, None, rng=random.Random(seed))
+        self.bag_gen = RandomGeneratorPerfect(
+            width, order, rng=random.Random(seed))
+        self.spent = {"free": 0.0, "bag": 0.0}
+        self.draws = 0
+        self.bag_side["box"].configure(text=f" the bag · order={order} ")
+        self.refresh()
+
+    def draw(self, count: int) -> None:
+        """Advance both sides by ``count`` draws and refresh the picture."""
+        for _ in range(count):
+            for key, generator in (("free", self.free_gen),
+                                   ("bag", self.bag_gen)):
+                self.spent[key] += math.log2(generator.eligible_size())
+                generator.next()
+        self.draws += count
+        self.refresh()
+
+    # --- Display ---
+
+    def _redraw(self, side: dict, generator: RandomGeneratorPerfect,
+                peak: int, colour: str) -> None:
+        canvas = side["canvas"]
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), self.CANVAS_W)
+        height = max(canvas.winfo_height(), self.CANVAS_H)
+        pad = 10
+        floor = height - pad
+        canvas.create_line(pad, floor, width - pad, floor, fill=ZERO_BG)
+        slot = (width - 2 * pad) / generator.A
+        bar = max(1.0, slot * 0.72)
+        scale = (height - 2 * pad) / max(peak, 1)
+        for value, count in enumerate(generator.counts):
+            x = pad + value * slot + (slot - bar) / 2
+            if count:
+                canvas.create_rectangle(
+                    x, floor - count * scale, x + bar, floor,
+                    fill=colour, outline="")
+            else:
+                # An unseen value still gets a tick, so gaps are visible.
+                canvas.create_rectangle(
+                    x, floor - 1, x + bar, floor, fill=ZERO_BG, outline="")
+
+    def refresh(self) -> None:
+        peak = max(max(self.free_gen.counts), max(self.bag_gen.counts), 1)
+        self._redraw(self.free_side, self.free_gen, peak, ACCENT)
+        self._redraw(self.bag_side, self.bag_gen, peak, ONE_BG)
+        for key, side, generator in (
+            ("free", self.free_side, self.free_gen),
+            ("bag", self.bag_side, self.bag_gen),
+        ):
+            report = generator.profile()
+            side["stats"].configure(
+                text=f"n={report['n']:,}  ·  spread {report['spread']}"
+                     f"  ·  free RNG ~{report['expected']:.1f}"
+                     f"  ·  {report['verdict']}"
+            )
+            if self.draws:
+                rate = self.spent[key] / self.draws
+                side["spent"].configure(
+                    text=f"spent {self.spent[key]:,.1f} bits"
+                         f"  ·  {rate:.4f} /draw"
+                )
+            else:
+                side["spent"].configure(text="spent 0.0 bits")
+
+
 class Bench(tk.Tk):
-    """The main window: three benches in a notebook."""
+    """The main window: four benches in a notebook."""
 
     def __init__(self):
         super().__init__()
@@ -534,6 +708,7 @@ class Bench(tk.Tk):
         notebook.add(RegisterBench(notebook), text="  Register  ")
         notebook.add(GlitchBench(notebook), text="  Glitch  ")
         notebook.add(RackBench(notebook), text="  Rack  ")
+        notebook.add(RandomBench(notebook), text="  Random  ")
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -564,6 +739,9 @@ class Bench(tk.Tk):
                         bordercolor=ZERO_BG, insertcolor=INK)
         style.configure("TSpinbox", fieldbackground=PANEL, foreground=INK,
                         bordercolor=ZERO_BG, arrowcolor=INK)
+        style.configure("TCheckbutton", background=BG, foreground=INK,
+                        focuscolor=BG)
+        style.map("TCheckbutton", background=[("active", BG)])
         style.configure("TScrollbar", background=PANEL, troughcolor=BG,
                         bordercolor=BG, arrowcolor=MUTED)
 

@@ -342,6 +342,44 @@ carrying to any future idea in this file that keys off a running minimum.
 
 ---
 
+## The dynamic tree — regenerate the render as the data arrives
+
+Matthew, 2026-08-14: *"we may have to regenerate our dynamic tree structure
+eventually in regard to compression."* Right instinct, and "eventually" has a
+concrete trigger. **Asserted** throughout — nothing here is measured yet.
+
+What exists today: `binarypossibilitytrees.py` renders the *space* — uniform
+branching wherever a bit is `?`, every branch drawn as if equally likely. What
+Phase 1 proved: a weighted register IS a bit-tree with odds per depth instead
+of per path. So the tree the compression thread will eventually want is one
+whose branches carry *learned* odds and whose shape is rebuilt as symbols
+arrive — which is established practice under other names: **dynamic Huffman
+coding** (FGK, Vitter) regenerates its tree per symbol under the sibling
+property, and LZMA's context trees are the per-path version of the same move.
+Matthew's word "dynamic" is the literature's word too, and naming it buys the
+known failure mode (rebuild cost swamping the coding gain — the reason Vitter
+exists) as a test.
+
+Three steps, smallest first:
+
+1. **Likelihood rendering in the ASCII tree** — the probability thread's one
+   unfinished item. Annotate or thicken branches by `p`; prune below a
+   threshold. A pure `binarypossibilitytrees.py` change, and the Register
+   tab's tree pane lights up with it for free. Buildable any time.
+2. **The generator's round tree** — at order=1 the eligible set narrows
+   A, A-1, ..., 1 through a round, so the round's tree has exactly A! leaves
+   and log2 of that is the charge identity. A small render of that tree would
+   *draw* the factorial. A demo, not a component; cheap once step 1 exists.
+3. **The dynamic rebuild** — per-branch odds learned from data, tree
+   regenerated as records arrive. **Trigger: Phase 2's codec**, which is what
+   gives the branches real odds to carry. Building it before then would be
+   modelling ahead of measurement, which this file exists to prevent.
+
+Admission bar, same as everything: the render pays when it shows a measured
+thing. The visual follows the model; it never leads it.
+
+---
+
 ## Tangents parked
 
 **The lossy `?`-plus-seed codec.** `BinaryGlitch` is already the decompressor

@@ -3,6 +3,34 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-14 (bench) — The Random tab: the race, made visible
+
+Fourth bench tab, and the balanced checkbox in the Rack tab. The tab is the
+coin-vs-bag race: a free coin and a `RandomGeneratorPerfect` fill twin
+histograms from the same seed — width/order/seed dials, draw x1/x16/x256/
+x4096, and under each side the library's own `profile()` verdict plus a
+spent-bits meter. The GUI holds no balance logic: the meter is nothing but
+log2 of the eligible-set size the library reports before each draw, and at
+order=1 the identity makes it *exact* — the live meter reads 2.7656 /draw at
+width 4 against log2(16!)/16, which a test now pins to nine places. Seen in
+one screenshot, seed 1, n=1,024: coin spread 30 (a free RNG should show
+~36.5), bag spread 0; 4.0000 vs 2.7656 bits per draw. The exchange-rate
+table, playable.
+
+The Xvfb + screenshot + actually-look loop earned its keep again: first shot
+showed the hint lines and the bag's meters clipping at the window edge
+(wraplength + shorter meter text fixed it), same class of catch as the
+2026-08-06 clipped widget. 11 new GUI tests (44 in the bench file), suite
+365 -> 376, still green on 3.10/3.11 and under 3.12+Tk.
+
+Matthew's dynamic-tree instinct went into `ideas.md § The dynamic tree`
+rather than into code, with its prior art named (dynamic Huffman — FGK,
+Vitter — and LZMA context trees), its trigger stated (Phase 2's codec gives
+the branches real odds to carry), and its cheap first step recorded
+(likelihood rendering in the ASCII tree, the probability thread's one
+unfinished item, now on TODO explicitly). The visual follows the model; it
+never leads it.
+
 ## 2026-08-14 — BinaryRandom.py: the verified design, collected
 
 The one thread that was designed, experimentally verified and unbuilt is now
