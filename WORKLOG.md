@@ -3,6 +3,22 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-14 (housekeeping) — The thinking docs go private
+
+`ideas.md` and `PLAN-compression.md` moved out of the repo into `_private/`
+(gitignored), by Matthew's call, for a reader-facing reason rather than a
+secretive one: these are ideas that might not work out, and a public repo
+should not lead anyone astray by letting half-formed thinking sit where it
+can read as claims. The Measured-vs-Asserted tags were the soft guard; the
+notebook is the hard one. The repo keeps what is built, tested and
+measured. Decided with eyes open: the old versions remain
+visible in the public git history (no rewrite — accepted), links to
+`ideas.md` anchors in older TODO/plan entries now point at the private
+notebook, and `benchmarks/corpus.py`'s text rows change composition from
+here on (the `*.md` blob shrinks), so text-corpus numbers in future runs
+will not byte-match the older results files. PLAN-probability.md and
+PLAN-generators.md stay public beside the code they document.
+
 ## 2026-08-14 (E4) — Admitted: the packet reads what nothing else can
 
 Ran E4, the admission test the plan called "the best case measured all

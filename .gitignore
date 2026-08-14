@@ -24,3 +24,7 @@ Thumbs.db
 
 # Cowork staging area for deletions (Claude can't delete on this machine)
 _to_delete/
+
+# The private notebook -- thinking docs kept local, out of the public repo
+# (moved 2026-08-14: ideas.md, PLAN-compression.md)
+_private/

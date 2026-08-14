@@ -3,10 +3,12 @@
 Surfaced tasks and future ideas. Tick things off or strike them out; add
 freely.
 
-Work that is decided lives here. Work that is still *thinking* lives in
-[ideas.md](ideas.md) — the four-branch packet tree, the generator sketches,
-and the tangents worth keeping. An item graduates from there to here when
-somebody has measured enough to know what building it would mean.
+Work that is decided lives here. Work that is still *thinking* lives in the
+private notebook (`_private/ideas.md`, local only since 2026-08-14) — the
+four-branch packet tree, the generator sketches, and the tangents worth
+keeping. An item graduates from there to here when somebody has measured
+enough to know what building it would mean. Links to `ideas.md` sections in
+older entries below point at that notebook.
 
 ## Planned threads
 

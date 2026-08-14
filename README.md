@@ -42,12 +42,12 @@ is both:
 | `randomness_demo.py` | the limits of all of it, demonstrated not claimed |
 
 The documents carry the rest: `WORKLOG.md` for what happened and why,
-`TODO.md` for what is next, `PLAN-probability.md`, `PLAN-compression.md`
-and `PLAN-generators.md` for the three threads large enough to have their
-own design docs, and
-[`ideas.md`](ideas.md) for everything thought but not yet built — where each
-number is tagged *measured* or *asserted* so a half-formed idea can be parked
-without quietly becoming a claim.
+`TODO.md` for what is next, and `PLAN-probability.md` and
+`PLAN-generators.md` for two threads large enough to have their own design
+docs. The compression plan and the ideas file — the everything-thought-but-
+not-yet-built layer — moved to a private notebook on 2026-08-14, so ideas
+that may not work out cannot read as claims; the worklog carries their
+public story, and older links to `ideas.md` point at that notebook.
 
 ## Registers and groups — `BinaryPossibility.py`
 
