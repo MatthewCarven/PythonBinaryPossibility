@@ -10,6 +10,9 @@ musical payoff, and `randomness_demo.py` gained the fifth demo. One deviation:
 v1 shipped with the bucket structure (E3 had already built and validated it in
 `benchmarks/balance.py`; the naive wall stays measured in §6's table and test
 10 guards it by wall clock). `WORKLOG.md` 2026-08-14 has the build notes.
+**E4 RUN 2026-08-14 — see `## E4, and what it changed` at the end. ADMITTED
+for the enumeration class, at the ceiling exactly; and `window` stopped being
+a searched parameter — its value is one alphabet's worth per round.**
 Siblings: [PLAN-probability.md](PLAN-probability.md) (built — supplies the
 weighting this leans on), [PLAN-compression.md](PLAN-compression.md) (Phase 1
 done — supplies the bar this has to clear).
@@ -473,7 +476,7 @@ fixed-order row. Five, cheapest first:
       re-charge. Globally, 2% destroyed three-quarters of the available bits.
       **Unknown locally**, and the more useful number by 69x. This is the
       experiment that decides whether the class is a curiosity or a component.
-- [ ] **E4 — generator as predictor.** The general admission test: does a
+- [x] **E4 — generator as predictor.** The general admission test: does a
       balance model lower the residual on the enumeration class the corpus
       already holds? Ordered enumeration *is* balanced with `order=1` at width
       32 — so this should be the best case measured all project, and if it
@@ -761,6 +764,115 @@ unchanged — this wins on balance-constrained data and honestly loses on text.
 - [ ] **Choose `window` per block and pay for it**, rather than searching the
       grid globally as E3 does. E3 charges `log2(12)` bits once for the whole
       file, which is honest but is not what a codec would do.
-- [ ] **E4 (generator as predictor) is now the interesting one**, since
-      enum/ordered at 32-bit is exactly the balance-constrained wide-symbol case
-      §1 says balance is cheapest on.
+- [x] ~~**E4 (generator as predictor) is now the interesting one**~~ — run
+      2026-08-14, next section. Admitted for the enumeration class; the window
+      question below is also answered (derive it, don't choose it).
+
+---
+
+# E4, and what it changed
+
+Run 2026-08-14, five days after the class shipped. Reproduce with
+`python -m benchmarks.e4`; raw output in
+`benchmarks/results-2026-08-14-e4.txt`. **Measured** throughout, seeds fixed,
+every grid paid for. The corpus items predate the generator by two design
+threads, so this is not the model grading its own homework.
+
+## The verdict: ADMITTED, for the enumeration class
+
+The admission table, every incumbent against both enumerations (width 16,
+every value of the alphabet exactly once):
+
+| model | enum/ordered | enum/shuffled |
+| --- | --- | --- |
+| gzip -9 | 1.1016x | 0.9996x |
+| lzma -9 | 1.5611x | 0.9995x |
+| bz2 -9 | 5.1316x | 1.0007x |
+| predict+rice | 8.8109x | 0.9283x |
+| predict+reg-persist | **31.8374x** | 0.9696x |
+| predict+bittree | 21.1393x | 0.9505x |
+| word order-0 (control) | 0.9663x | 0.9663x |
+| **balance packet** | 1.0991x | **1.0991x** |
+| permutation ceiling | 1.0991x | 1.0991x |
+
+On `enum/ordered` the incumbents already win and the packet is redundant —
+as §7 predicted. On `enum/shuffled` **every incumbent reads nothing or
+worse, and the balance packet reads the theoretical ceiling exactly**, minus
+16.00 bits of escape (= log2(A+1)). It is the first corpus item where the
+balance model beats every incumbent at once: 11.4 KB back out of 128 KB that
+nothing else can touch. The packet decision is honest and cheap — 1 bit per
+stream buys the right model both times.
+
+Two identities held at corpus scale before anything else was read:
+`charge(shuffled) - log2(A!) = +7.9e-09` bits, and ordered charges
+*identically* (a full-alphabet permutation is one round of the bag, whatever
+its order). The library and `balance.py`'s instrumented model agree to 0.0
+bits. §7's narrow claim stands verbatim: home ground is deal records,
+round-robin schedules, id sweeps — structured near-permutation data.
+
+## The window law: the round is the window
+
+The result that changed the design's shape. Two experiments, opposite
+answers, one rule:
+
+- **Single round (N = A), 2% substituted:** running counts keep **80%** of
+  the available saving (1.0792x of 1.0991x — E3 kept 82% at byte width, the
+  same smooth curve), and **every window destroys the structure**: 1.0001x
+  at 256, 1.0023x at 4096. order=2 destroys it too (1.0005x).
+- **Four rounds (width 12, N = 4A), 2% substituted:** running counts
+  **collapse below 1.0** (0.9677x — E3's laggard trap, replayed at word
+  width), and `window = A` recovers **1.1088x** of the clean 1.1365x.
+  Half a round forfeits the exhaustion (1.0316x); two rounds re-admit the
+  trap inside each window (0.9782x); order=2 is not the fix (0.9845x).
+
+No contradiction: E3's trap needs the minimum count to *advance*, and in a
+single round it never does. The window's job is to separate rounds — which
+reprices E3's own result. **Its winning window=256 at width 8 was never an
+arbitrary grid point: 256 was the alphabet.** One rule covers both
+experiments and closes the "choose window per block" question above:
+
+    window = one alphabet's worth per round of data; 0 when the file is a
+    single round. Derived, not searched.
+
+## The warning shot: the escape can win for the wrong reason
+
+Balance pointed at ordered-enum *residuals* (constant 2s, as peaked as data
+gets) posts **13.1x — at a 100.0% miss rate**. Every symbol went through the
+escape, whose miss cost `log2(A - |eligible|)` is ~0 bits when exactly one
+value is over quota: the escape degenerated into a repeat-the-hot-value
+coder, E3's audio-footnote hot/cold split reproduced on demand. The real
+incumbent on that row (lzma) reads **756.9x**, and the order-0 "baseline" it
+embarrasses (6.2x) is over-smoothed by a 2^17 Laplace prior. **A balance
+coder can post a ratio while the balance model is dead. Quote the miss rate
+or quote nothing.** The aged local frequency baseline is now *required*
+before any escape-heavy row — including the audio one — can be read at all.
+
+## Controls — all held
+
+| control | result | required |
+| --- | --- | --- |
+| uniform 16-bit noise through the packet | 0.9932x | ~<= 1, no fantasy |
+| seed stability, 2% x 3 seeds | spread 0.0005 | stable |
+| toolbox on enum/shuffled | 0.9995–1.0007x | blind, as it must be |
+| ideal_bits vs randomness_demo ceiling | 1.0991x vs 1.0991x | agree |
+
+## Kill criteria, assessed
+
+- **Fails to lower the residual on the enumeration class** — not triggered:
+  lowered ~9% where nothing else moves at all.
+- **An incumbent already captures it** — not triggered: the best incumbent
+  on enum/shuffled is bz2 at 1.0007x, which is noise.
+- **Only wins on its own output** — not triggered: enum/shuffled predates
+  the generator by two design threads.
+
+## What E4 opens
+
+- [ ] **The real-data hunt.** The packet's home ground is now defined —
+      dealt records, round-robin logs, id sweeps, near-permutations with a
+      few percent of dirt. Find some that exist outside this repo; E2's
+      order sweep folds into that hunt.
+- [ ] **Derive `window` in code**, not in prose: when a stream's effective
+      alphabet is measurable (`BinaryEntropy.effective_width`), the model
+      should set window = A itself and pay only for the width.
+- [ ] **The aged local frequency baseline**, upgraded from desirable to
+      required — no escape-heavy row is quotable without it.

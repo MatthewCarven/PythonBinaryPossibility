@@ -43,7 +43,7 @@ checklists live in the plans; only the headline sits here.
 
 ## Next up
 
-- [ ] **Push the BinaryRandom and bench commits** (meatthread0 — Claude
+- [ ] **Push the BinaryRandom, bench and E4 commits** (meatthread0 — Claude
       doesn't push). The 2026-08-09 commit is confirmed pushed — main ==
       origin/main checked 2026-08-14.
 - [x] ~~The word lens and `classify()`~~ — done 2026-08-09. `vocabulary()`,
@@ -86,14 +86,25 @@ checklists live in the plans; only the headline sits here.
       frequency split — the opposite of balance — and the reset-prior baseline
       it is measured against is over-smoothed on peaked data. Either a real win
       hiding in audio residuals or an artefact; currently unknown.
+      **Upgraded to REQUIRED by E4 §4**: on peaked residuals the escape posted
+      13.1x at a 100% miss rate against lzma's 756.9x — no escape-heavy row is
+      quotable without the aged baseline.
 - [x] ~~**Balanced steps in `PsynthRack.collapse()`, behind an option.**~~ —
       done 2026-08-14: `collapse(balanced=True)` deals each track's fair steps
       from a width-1 order-1 bag (sd 1.95 -> 0.00, measured semantics);
       weighted steps keep their own coin, and the coin stays the default.
       Still open below: a bench toggle for it.
-- [ ] **E4 (generator as predictor) is now the interesting one**, since
-      enum/ordered at 32-bit is exactly the balance-constrained wide-symbol case
-      where balance is cheapest (4.5% of the symbol, vs 17.8% at width 8).
+- [x] ~~**E4 (generator as predictor)**~~ — run 2026-08-14. **ADMITTED for
+      the enumeration class**: on enum/shuffled the packet reads 1.0991x (the
+      ceiling exactly) where every incumbent reads 0.93–1.00x; survives 2%
+      dirt at 80%. And the window law fell out: **window = one alphabet's
+      worth per round** (E3's winning 256 WAS the alphabet), 0 for
+      single-round files. `PLAN-generators.md § E4` has the write-up.
+- [ ] **The real-data hunt** (opened by E4): the packet's home ground is
+      dealt records, round-robin logs, id sweeps — near-permutations with a
+      few percent of dirt. Find some that exist outside this repo; E2's order
+      sweep folds in. Also: derive `window = A` in code from
+      `effective_width()` instead of taking it as a parameter.
 - [ ] **More `BinaryEntropy`** (next session). Open questions collected in
       [ideas.md](ideas.md#open-questions-for-binaryentropy): the `skew()`
       denominator, `classify()`'s labels moving with excerpt length, whether

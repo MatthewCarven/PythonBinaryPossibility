@@ -3,6 +3,54 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-14 (E4) — Admitted: the packet reads what nothing else can
+
+Ran E4, the admission test the plan called "the best case measured all
+project". Reproduce with `python -m benchmarks.e4`; raw output in
+`benchmarks/results-2026-08-14-e4.txt`; full write-up appended to
+`PLAN-generators.md § E4, and what it changed`. Probe-first again: every
+headline number existed in a scratch script before e4.py was written.
+
+**The verdict: ADMITTED, for the enumeration class.** On `enum/shuffled` —
+a corpus item two design threads older than the generator — every incumbent
+reads nothing or worse (gzip 0.9996x, lzma 0.9995x, bz2 1.0007x, rice
+0.9283x, register-persist 0.9696x, bittree 0.9505x, word order-0 0.9663x)
+and the balance packet reads **1.0991x, the permutation ceiling exactly**,
+minus 16.00 bits of escape (= log2(A+1)). First corpus item where the
+balance model beats every incumbent at once: 11.4 KB back out of 128 KB
+nothing else can touch. The identity held at corpus scale before anything
+was read: charge minus log2(A!) = +7.9e-09 bits, and ordered charges
+byte-identically (a full-alphabet permutation is one round of the bag,
+whatever its order). On `enum/ordered` the incumbents win (reg-persist
+31.84x) and a 1-bit paid packet choice picks correctly both times.
+
+**The window law — the round is the window.** Single-round data (N = A)
+inverts E3: running counts keep 80% of the saving at 2% substitution and
+every window DESTROYS the structure (1.0001x at 256). Multi-round data
+(width 12, N = 4A) replays E3's collapse exactly (running 0.9677x) and
+recovers at **window = A precisely** (1.1088x of a clean 1.1365x) — while
+window = A/2 forfeits the exhaustion, window = 2A re-admits the trap, and
+order=2 fixes nothing. So E3's winning window=256 at width 8 was never an
+arbitrary grid point: **256 was the alphabet.** One rule, both experiments:
+window = one alphabet's worth per round, 0 when the file is a single round.
+Derived, not searched — `window` leaves the grid.
+
+**The warning shot.** Balance pointed at ordered-enum residuals (constant
+2s) posts 13.1x — at a **100.0% miss rate**. The escape's miss cost
+`log2(A - |eligible|)` is ~0 when one value is over quota, so it degenerated
+into a repeat-the-hot-value coder: E3's audio-footnote hot/cold split,
+reproduced on demand, against an order-0 baseline over-smoothed by a 2^17
+Laplace prior — while the real incumbent (lzma) reads 756.9x. A balance
+CODER can post a ratio while the balance MODEL is dead; quote the miss rate
+or quote nothing. The aged local frequency baseline is upgraded from
+desirable to REQUIRED.
+
+Controls held: uniform noise 0.9932x, seed spread 0.0005, toolbox blind,
+ideal_bits equals the shipped demo's ceiling. No kill criterion fired.
+Also corrected `corpus.py`'s control note in passing: "incompressible past
+~1.05x" was written for 32-bit and understated the 16-bit ceiling (1.0991x)
+that E4 then hit exactly.
+
 ## 2026-08-14 (bench) — The Random tab: the race, made visible
 
 Fourth bench tab, and the balanced checkbox in the Rack tab. The tab is the

@@ -12,9 +12,11 @@ it is meant to prove.  Nothing here is picked because it flatters the models
 * **enum/ordered** -- every value of a range exactly once, in order. No block
   repeats until the space is exhausted, but consecutive deltas are constant.
   Expected to be the models' best case by a wide margin.
-* **enum/shuffled** -- the same values, order destroyed. A **control**: this
-  is provably incompressible past ~1.05x, so anything claiming better has a
-  bug.
+* **enum/shuffled** -- the same values, order destroyed. A **control**: a
+  permutation is provably incompressible past its ceiling — 1.0991x at the
+  default 16 bits, 1.0472x at 32 (the earlier "~1.05x" here was the 32-bit
+  number) — so anything claiming better has a bug. E4 (2026-08-14) hit the
+  ceiling exactly with the balance packet; nothing else reads it at all.
 * **enum/seeded** -- byte-identical to shuffled, but generated from a known
   seed. Not a compression test; a *framing* test.
 
@@ -24,6 +26,7 @@ records; anything else arrives as bytes.
 """
 
 import glob
+import math
 import os
 import random
 import struct
@@ -341,7 +344,8 @@ def enumeration_items(bits: int = 16) -> List[Item]:
         ),
         Item(
             "enum/shuffled", "enum", shuffled, bits,
-            note=f"{scale} values shuffled -- CONTROL, ceiling is ~1.05x",
+            note=f"{scale} values shuffled -- CONTROL, ceiling is "
+                 f"{bits / (bits - math.log2(math.e)):.4f}x (E4 hit it exactly)",
         ),
         Item(
             "enum/seeded", "enum", list(shuffled), bits,
