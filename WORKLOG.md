@@ -3,6 +3,29 @@
 Newest entries at the top. Findings, decisions, and deviations per the
 working agreement.
 
+## 2026-08-14 (README) — The overlay claim, tested and kept
+
+Matthew added to the README: *"trying to combine every possibility into a
+singular outcome will only overlay conflicting paths and result in their
+cancellation."* Tested rather than taken on faith, and it held — with one
+precision now stated beneath it. Measured: `1?0?` overlays to
+[1.0, 0.5, 0.0, 0.5] (in the ±1 view [+1, 0, −1, 0] — superposed positions
+cancel to exactly zero); a fully superposed 6-bit register overlays to 0.5
+everywhere, one "outcome" that is not a legal state, all six bits
+annihilated; and a mix of EVERY possible song of a `1?1?` bar plays its
+decided steps at ratio 1.000 and its superposed steps at exactly 0.500 — a
+half-volume ghost. Cancellation to the midpoint, not interference: mean of
+(+hit, −hit) is 0.000000 flat, but the model deliberately has no −hit,
+which is the no-amplitudes disclaimer doing its job.
+
+The sharpest confirmation was a collision: XOR-linked {01,10}, XNOR-linked
+{00,11} and free {00,01,10,11} — three different possibility spaces with
+different entropies — produce the IDENTICAL overlay (0.5, 0.5). Overlaying
+destroys exactly cross-position structure, the thing the linked-bits
+thread wants to model, and it manufactures data that reads as nothing
+while the space had structure. `collapse()` chooses instead of merging for
+precisely this reason.
+
 ## 2026-08-14 (housekeeping) — The thinking docs go private
 
 `ideas.md` and `PLAN-compression.md` moved out of the repo into `_private/`

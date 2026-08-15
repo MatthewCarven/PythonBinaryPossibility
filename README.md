@@ -18,6 +18,18 @@ multiply the reachable states (×2 each), collapsing a bit halves the space.
 
 Pure Python, standard library only, no dependencies.
 
+Also trying to combine every possibility into a singular outcome will 
+only overlay conflicting paths and result in their cancellation.
+Wherever reachable states disagree, the overlay washes to the middle — a
+fully superposed register averages to 0.5 everywhere, a mix of every
+possible song plays its undecided steps at exactly half volume, and
+opposite linkings (always-equal vs always-opposite) overlay identically.
+Only the decided bits survive. (Cancellation to the midpoint, not
+interference — probabilities never go negative.) That is why `collapse()`
+chooses instead of merging: the one outcome that represents every
+possibility carries none of them.
+
+
 ## Quick start
 
 ```
